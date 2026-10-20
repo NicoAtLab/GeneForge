@@ -279,7 +279,7 @@ try {
     await page.getByRole('button', { name: 'Enregistrer les préférences' }).click();
     await until(async () => (await state()).settings.name === 'Validation');
     assert.equal((await state()).settings.sequenceFontSize, 18);
-    assert.equal(await page.locator('html').getAttribute('data-accent'), 'violet');
+    await page.locator('html[data-accent="violet"]').waitFor();
     const saved = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Exporter une sauvegarde complète' }).click();
     backup = readFileSync(await (await saved).path(), 'utf8');
