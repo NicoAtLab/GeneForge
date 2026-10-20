@@ -4,6 +4,8 @@ import { api, download, readFile } from '../lib.ts';
 import type { Commit } from '../lib.ts';
 import { Heading } from './Common.tsx';
 import { Icon } from './Icon.tsx';
+import { displayDefaults } from '../preferences.ts';
+import { Bases } from './Common.tsx';
 export function SettingsPage({
   state,
   commit,
@@ -99,6 +101,89 @@ export function SettingsPage({
                 </select>
               </label>
               <label className="field">
+                Couleur d’accent
+                <select
+                  className="select"
+                  value={settings.accent}
+                  onChange={(e) =>
+                    setSettings({ ...settings, accent: e.target.value as Settings['accent'] })
+                  }
+                >
+                  <option value="mint">Menthe</option>
+                  <option value="blue">Bleu</option>
+                  <option value="violet">Violet</option>
+                  <option value="amber">Ambre</option>
+                </select>
+              </label>
+              <label className="field">
+                Densité de l’interface
+                <select
+                  className="select"
+                  value={settings.density}
+                  onChange={(e) =>
+                    setSettings({ ...settings, density: e.target.value as Settings['density'] })
+                  }
+                >
+                  <option value="comfortable">Confortable</option>
+                  <option value="compact">Compacte</option>
+                </select>
+              </label>
+              <h3>Lecture des séquences</h3>
+              <label className="field">
+                Vue à l’ouverture
+                <select
+                  className="select"
+                  value={settings.defaultSequenceView}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      defaultSequenceView: e.target.value as Settings['defaultSequenceView'],
+                    })
+                  }
+                >
+                  <option value="edit">Édition</option>
+                  <option value="colored">Vue colorée & annotations</option>
+                </select>
+              </label>
+              <label className="field">
+                Taille des bases : {settings.sequenceFontSize} px
+                <input
+                  type="range"
+                  min={12}
+                  max={22}
+                  step={1}
+                  value={settings.sequenceFontSize}
+                  onChange={(e) =>
+                    setSettings({ ...settings, sequenceFontSize: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <label className="field">
+                Palette des bases
+                <select
+                  className="select"
+                  value={settings.basePalette}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      basePalette: e.target.value as Settings['basePalette'],
+                    })
+                  }
+                >
+                  <option value="classic">Classique</option>
+                  <option value="contrast">Contraste renforcé</option>
+                  <option value="mono">Monochrome</option>
+                </select>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={settings.groupBases}
+                  onChange={(e) => setSettings({ ...settings, groupBases: e.target.checked })}
+                />
+                Espacer les groupes de 10 bases
+              </label>
+              <label className="field">
                 Bases par ligne dans la vue colorée
                 <select
                   className="select"
@@ -112,6 +197,24 @@ export function SettingsPage({
                   ))}
                 </select>
               </label>
+              <div
+                className="sequence-preview"
+                data-base-palette={settings.basePalette}
+                style={{ fontSize: settings.sequenceFontSize }}
+              >
+                <Bases sequence="ACGTTGCANR" />
+                {settings.groupBases ? ' ' : ''}
+                <Bases sequence="ACGTTGCANR" />
+              </div>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() =>
+                  setSettings({ ...settings, ...displayDefaults, theme: 'dark', basesPerLine: 60 })
+                }
+              >
+                Réinitialiser l’apparence
+              </button>
               <button className="button primary" disabled={busy}>
                 <Icon name="save" />
                 Enregistrer les préférences
@@ -177,7 +280,7 @@ export function SettingsPage({
           <div className="panel">
             <div className="panel-heading">
               <h3>
-                GeneForge <span className="tag">0.1.0</span>
+                GeneForge <span className="tag">0.2.0</span>
               </h3>
             </div>
             <div className="panel-body">
@@ -187,9 +290,8 @@ export function SettingsPage({
                 Primer3.
               </p>
               <p className="muted small-text">
-                Cartes plasmidiques, annotations, alignements Biopython, chromatogrammes et
-                installateur natif : prochaines étapes. Ces modules ne sont pas inclus dans cette
-                livraison.
+                Cartes plasmidiques, alignements Biopython, chromatogrammes et installateur natif :
+                prochaines étapes. Ces modules ne sont pas inclus dans cette livraison.
               </p>
               <a
                 className="text-link"

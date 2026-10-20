@@ -175,7 +175,7 @@ export function createGeneForgeServer(options: ServerOptions = {}): {
         const state = store.read();
         json(response, 200, {
           status: 'ok',
-          schemaVersion: 1,
+          schemaVersion: 2,
           revision: state.revision,
           counts: {
             projects: state.projects.length,

@@ -101,6 +101,14 @@ export default function App() {
     return () => media.removeEventListener('change', apply);
   }, [state?.settings.theme]);
   useEffect(() => {
+    if (!state) return;
+    const root = document.documentElement;
+    root.dataset.accent = state.settings.accent;
+    root.dataset.density = state.settings.density;
+    root.dataset.basePalette = state.settings.basePalette;
+    root.style.setProperty('--sequence-font-size', `${state.settings.sequenceFontSize}px`);
+  }, [state?.settings]);
+  useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
       if (dirty || busy) {
         e.preventDefault();
@@ -198,6 +206,7 @@ export default function App() {
             projectId,
             name: 'Séquence de démonstration',
             sequence: dna,
+            annotations: [],
             topology: 'linear',
             notes:
               'Données artificielles pour découvrir l’éditeur. Aucune fonction biologique attribuée.',
@@ -1184,7 +1193,7 @@ export default function App() {
           </span>
           <span>
             SQLite · Révision {state.revision}
-            <span className="status-separator">|</span>GeneForge 0.1.0
+            <span className="status-separator">|</span>GeneForge 0.2.0
           </span>
         </footer>
       </div>

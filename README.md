@@ -1,6 +1,6 @@
 # GeneForge — Molecular Design Workspace
 
-Première version fonctionnelle **0.1.0**, en français, pour travailler localement sur des séquences ADN, une bibliothèque d'amorces et des projets.
+Version **0.2.0**, en français, pour travailler localement sur des séquences ADN, une bibliothèque d'amorces et des projets.
 
 ## Démarrer sur cet ordinateur
 
@@ -27,14 +27,29 @@ Les données artificielles de démonstration sont créées uniquement en cliquan
 
 ### Limites explicites
 
-- Les cartes plasmidiques, annotations, traductions, design automatique d'amorces, alignements Biopython, chromatogrammes AB1, enzymes, import GenBank/XLSX et exports graphiques ne sont pas encore implémentés.
+- Les cartes plasmidiques, traductions, design automatique d'amorces, alignements Biopython, chromatogrammes AB1, enzymes, import GenBank/XLSX et exports graphiques ne sont pas encore implémentés.
 - Aucun calcul de hairpin, dimère, masse moléculaire ou spécificité n'est affiché comme disponible.
 - Un seul profil local et un seul document édité à la fois ; pas encore de corbeille ou d'historique de versions des documents.
 - L'éditeur demande **Enregistrer / Ctrl+S**. Un avertissement protège les modifications non enregistrées lors de la navigation et de la fermeture ; il n'y a pas de récupération automatique des brouillons.
 - Les sauvegardes complètes se déclenchent manuellement. Une copie automatique est créée avant toute restauration, pas à chaque modification.
 - SQLite contient un instantané JSON validé de l'espace et un numéro de révision. Les relations sont contrôlées par la couche métier ; leur normalisation en tables relationnelles est une évolution prévue.
-- Limites : 1 000 000 de bases par séquence, 2 000 par entrée d'amorce, requête/backup 16 Mio. L'espace entier est chargé en mémoire ; cette version n'est pas un navigateur de génomes complets. Le rendu coloré est paginé, pas un éditeur intégralement virtualisé.
+- Limites : 1 000 000 de bases et 2 000 annotations par séquence, 2 000 bases par entrée d'amorce, requête/backup 16 Mio. L'espace entier est chargé en mémoire ; cette version n'est pas un navigateur de génomes complets. Le rendu coloré est paginé, pas un éditeur intégralement virtualisé.
 - FASTA conserve nom et séquence ; CSV conserve nom, séquence, notes et tags. Utiliser la sauvegarde native pour préserver toutes les métadonnées, associations, dates et préférences.
+
+## Sélections, surlignages et personnalisation
+
+- Sélectionner du texte dans l'éditeur, glisser sur les bases de la vue colorée ou saisir un début et une fin. Les coordonnées commencent à 1 et incluent les deux bornes. Dans la vue colorée, les flèches déplacent la sélection ; Maj + flèches l'étend, Ctrl+A sélectionne tout et Ctrl+C copie les bases.
+- Le panneau **Sélection** affiche la longueur, la fraction du document et les effectifs et pourcentages A/T/G/C/IUPAC. Les pourcentages par catégorie utilisent toute la sélection ; GC/AT utilisent uniquement les bases canoniques. Un résumé apparaît aussi sous la séquence.
+- **Surligner la sélection** crée une annotation avec titre, couleur et notes. Les régions peuvent se chevaucher : leurs couleurs se partagent alors le fond des bases. Le survol affiche les informations ; la liste permet de retrouver, modifier et supprimer les annotations. Un clic sur leur titre sélectionne la région.
+- Les insertions et suppressions déplacent les annotations. Une modification qui touche une région la marque **À vérifier**. Si toute la région est supprimée, ses informations restent dans la liste, sans coordonnées, et peuvent être réaffectées. Le complément inverse transforme les coordonnées. L'annulation et le rétablissement incluent les annotations.
+- **Enregistrer / Ctrl+S** conserve la séquence et ses annotations. FASTA ne stocke pas les surlignages : utiliser la sauvegarde complète pour les conserver et les transférer.
+- Dans **Préférences & sauvegardes** : thème, quatre accents, densité confortable/compacte, taille des bases de 12 à 22 px, trois palettes, espacement par groupes de dix, bases par ligne et vue par défaut. Enregistrer les préférences les applique à l'espace ; un aperçu montre les bases avant enregistrement.
+
+### Mise à jour depuis 0.1.0
+
+Arrêter GeneForge avant de lancer la nouvelle version. Au premier démarrage, le modèle SQLite passe automatiquement en version 2, en conservant les données et les préférences existantes. Une sauvegarde intacte du modèle précédent est créée dans `data/backups/before-migration-v2-…geneforge.json`. Les anciennes sauvegardes restent importables ; leur intégrité est vérifiée avant migration.
+
+Les annotations sont des repères personnels, sans déduction de fonction biologique, de brin ou de cadre de lecture. Une région ne peut pas traverser l'origine d'une séquence circulaire ; créer deux annotations si nécessaire.
 
 ## Installation sur une autre machine
 

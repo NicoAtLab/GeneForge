@@ -16,6 +16,14 @@ Ce MVP travaille sur de l'ADN écrit de 5′ vers 3′. Les calculs de compositi
 
 Les homopolymères signalés sont les segments maximaux d'au moins quatre bases canoniques identiques. Un segment `NNNN` n'est pas présenté comme un homopolymère biologique connu. Ce comptage n'est pas un calcul de dimère, de hairpin ou de spécificité.
 
+Les mêmes calculs s'appliquent à la sélection. Les pourcentages individuels A/T/G/C/ambiguës utilisent la longueur totale de la région, tandis que GC/AT gardent le dénominateur canonique décrit ci-dessus. La part du document est `100 × longueur sélectionnée / longueur totale`. Les arrondis affichés à une décimale peuvent entraîner une somme légèrement différente de 100 %.
+
+## Annotations personnelles
+
+Les intervalles sont à bornes incluses, de 1 à la longueur de la séquence normalisée. Les blancs ne comptent pas comme bases. Une annotation enregistre un nom, une couleur et des notes ; elle ne déclare aucune fonction biologique automatiquement.
+
+Les insertions au début d'une région décalent cette région ; les insertions après sa dernière base ne l'étendent pas. Une édition interne ajuste ses bornes et active un indicateur de vérification. Une région entièrement supprimée conserve ses informations avec des coordonnées nulles. Le complément inverse transforme `[début, fin]` en `[L − fin + 1, L − début + 1]`. Il n'existe pas encore de notion de brin d'annotation ni de région traversant l'origine circulaire.
+
 ## Tm indicative de Wallace
 
 `Tm (°C) = 2 × (A+T) + 4 × (G+C)`.

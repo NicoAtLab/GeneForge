@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { WorkspaceState } from '../src/types.ts';
+import { displayDefaults } from '../src/preferences.ts';
 
 export const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 const DNA = /^[ACGTRYSWKMBDHVN]*$/;
@@ -65,7 +66,7 @@ function baseFields(record: Record<string, unknown>, field: string, ids: Set<str
   date(record.updatedAt, `${field}.updatedAt`);
 }
 
-export function validateState(value: unknown): WorkspaceState {
+export function validateState(value: unknown, allowLegacy = false): WorkspaceState {
   const state = object(value, 'state', [
     'schemaVersion',
     'revision',
@@ -74,7 +75,8 @@ export function validateState(value: unknown): WorkspaceState {
     'primers',
     'settings',
   ]);
-  if (state.schemaVersion !== 1) invalid('schemaVersion');
+  const legacy = allowLegacy && state.schemaVersion === 1;
+  if (state.schemaVersion !== 2 && !legacy) invalid('schemaVersion');
   if (
     !Number.isSafeInteger(state.revision) ||
     (state.revision as number) < 0 ||
@@ -112,6 +114,7 @@ export function validateState(value: unknown): WorkspaceState {
       'notes',
       'createdAt',
       'updatedAt',
+      ...(!legacy ? ['annotations'] : []),
     ]);
     baseFields(sequence, 'sequence', sequenceIds);
     id(sequence.projectId, 'sequence.projectId');
@@ -120,6 +123,40 @@ export function validateState(value: unknown): WorkspaceState {
     if (!DNA.test(sequence.sequence)) invalid('sequence.sequence (alphabet ADN IUPAC)');
     choice(sequence.topology, 'sequence.topology', ['linear', 'circular']);
     string(sequence.notes, 'sequence.notes', 100_000);
+    if (!legacy) {
+      array(sequence.annotations, 'sequence.annotations', 2_000);
+      const ids = new Set<string>();
+      for (const item of sequence.annotations) {
+        const a = object(item, 'annotation', [
+          'id',
+          'name',
+          'start',
+          'end',
+          'color',
+          'notes',
+          'needsReview',
+        ]);
+        id(a.id, 'annotation.id');
+        if (ids.has(a.id)) invalid('annotation.id (doublon)');
+        ids.add(a.id);
+        string(a.name, 'annotation.name', 200, 1);
+        if (!a.name.trim()) invalid('annotation.name');
+        string(a.notes, 'annotation.notes', 20_000);
+        string(a.color, 'annotation.color', 7, 7);
+        if (!/^#[0-9a-fA-F]{6}$/.test(a.color)) invalid('annotation.color');
+        boolean(a.needsReview, 'annotation.needsReview');
+        if (a.start === null && a.end === null) {
+          if (!a.needsReview) invalid('annotation.needsReview');
+        } else if (
+          !Number.isInteger(a.start) ||
+          !Number.isInteger(a.end) ||
+          (a.start as number) < 1 ||
+          (a.end as number) < (a.start as number) ||
+          (a.end as number) > sequence.sequence.length
+        )
+          invalid('annotation.coordinates');
+      }
+    }
   }
   const primerIds = new Set<string>();
   for (const item of state.primers) {
@@ -159,6 +196,7 @@ export function validateState(value: unknown): WorkspaceState {
     'organization',
     'theme',
     'basesPerLine',
+    ...(!legacy ? Object.keys(displayDefaults) : []),
   ]);
   string(settings.name, 'settings.name', 200);
   string(settings.organization, 'settings.organization', 200);
@@ -169,8 +207,27 @@ export function validateState(value: unknown): WorkspaceState {
     (settings.basesPerLine as number) > 120
   )
     invalid('settings.basesPerLine');
+  if (!legacy) {
+    choice(settings.accent, 'settings.accent', ['mint', 'blue', 'violet', 'amber']);
+    choice(settings.density, 'settings.density', ['comfortable', 'compact']);
+    choice(settings.basePalette, 'settings.basePalette', ['classic', 'contrast', 'mono']);
+    choice(settings.defaultSequenceView, 'settings.defaultSequenceView', ['edit', 'colored']);
+    boolean(settings.groupBases, 'settings.groupBases');
+    if (
+      !Number.isInteger(settings.sequenceFontSize) ||
+      (settings.sequenceFontSize as number) < 12 ||
+      (settings.sequenceFontSize as number) > 22
+    )
+      invalid('settings.sequenceFontSize');
+  }
   // JSON round trip also detaches callers from the persisted state.
-  return JSON.parse(JSON.stringify(state)) as WorkspaceState;
+  const result = JSON.parse(JSON.stringify(state));
+  if (legacy) {
+    result.schemaVersion = 2;
+    result.settings = { ...result.settings, ...displayDefaults };
+    result.sequences = result.sequences.map((s: object) => ({ ...s, annotations: [] }));
+  }
+  return result as WorkspaceState;
 }
 
 export interface BackupEnvelope {
@@ -206,5 +263,5 @@ export function validateBackup(value: unknown): WorkspaceState {
   const expected = Buffer.from(backup.checksum, 'hex');
   if (!timingSafeEqual(actual, expected))
     throw new ApiError(400, 'CHECKSUM_MISMATCH', 'La sauvegarde a été modifiée ou endommagée.');
-  return validateState(backup.state);
+  return validateState(backup.state, true);
 }

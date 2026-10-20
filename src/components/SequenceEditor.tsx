@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SequenceRecord, WorkspaceState } from '../types.ts';
+import { remapAnnotations, reverseAnnotations } from '../core/annotations.ts';
+import type { EditRange } from '../core/annotations.ts';
 import {
   complement,
   findMotifs,
@@ -12,7 +14,10 @@ import { exportFasta } from '../core/formats.ts';
 import { date, download, filename, now, number, percent } from '../lib.ts';
 import type { Commit } from '../lib.ts';
 import { Icon } from './Icon.tsx';
-import { Bases, Composition, Heading } from './Common.tsx';
+import { Composition, Heading } from './Common.tsx';
+import { AnnotationsPanel } from './AnnotationsPanel.tsx';
+
+type Snapshot = Pick<SequenceRecord, 'sequence' | 'annotations'>;
 
 export function SequenceEditor({
   record,
@@ -32,14 +37,20 @@ export function SequenceEditor({
   onBack: () => void;
 }) {
   const [draft, setDraft] = useState(record),
-    [history, setHistory] = useState<string[]>([]),
-    [future, setFuture] = useState<string[]>([]);
+    [history, setHistory] = useState<Snapshot[]>([]),
+    [future, setFuture] = useState<Snapshot[]>([]);
   const [motif, setMotif] = useState(''),
     [selection, setSelection] = useState({ start: 0, end: 0 }),
     [page, setPage] = useState(0),
-    [view, setView] = useState<'edit' | 'colored'>('edit');
+    [view, setView] = useState<'edit' | 'colored'>(state.settings.defaultSequenceView);
+  const [rangeStart, setRangeStart] = useState('1'),
+    [rangeEnd, setRangeEnd] = useState('1');
   const inputRef = useRef<HTMLTextAreaElement>(null),
     searchRef = useRef<HTMLInputElement>(null);
+  const editHint = useRef<EditRange | undefined>(undefined);
+  const dragAnchor = useRef<number | null>(null),
+    keyboardAnchor = useRef(0),
+    cursor = useRef(0);
   const normalized = useMemo(() => normalizeSequence(draft.sequence), [draft.sequence]);
   const validation = useMemo(() => validateSequence(draft.sequence), [draft.sequence]);
   const stats = useMemo(
@@ -51,22 +62,36 @@ export function SequenceEditor({
     setDirty(dirty);
     return () => setDirty(false);
   }, [dirty, setDirty]);
-  function changeSequence(value: string) {
-    setHistory((h) => [...h.slice(-29), draft.sequence]);
+  function changeSnapshot(next: Snapshot) {
+    setHistory((h) => [
+      ...h.slice(-29),
+      { sequence: draft.sequence, annotations: draft.annotations },
+    ]);
     setFuture([]);
-    setDraft((d) => ({ ...d, sequence: value }));
+    setDraft((d) => ({ ...d, ...next }));
+  }
+  function changeSequence(value: string) {
+    const next = normalizeSequence(value);
+    changeSnapshot({
+      sequence: value,
+      annotations: remapAnnotations(draft.annotations, normalized, next, editHint.current),
+    });
+    editHint.current = undefined;
+    setSelection({ start: 0, end: 0 });
   }
   function undo() {
     if (!history.length) return;
-    setFuture((f) => [draft.sequence, ...f]);
-    setDraft((d) => ({ ...d, sequence: history[history.length - 1] }));
+    setFuture((f) => [{ sequence: draft.sequence, annotations: draft.annotations }, ...f]);
+    setDraft((d) => ({ ...d, ...history[history.length - 1] }));
     setHistory((h) => h.slice(0, -1));
+    setSelection({ start: 0, end: 0 });
   }
   function redo() {
     if (!future.length) return;
-    setHistory((h) => [...h, draft.sequence]);
-    setDraft((d) => ({ ...d, sequence: future[0] }));
+    setHistory((h) => [...h, { sequence: draft.sequence, annotations: draft.annotations }]);
+    setDraft((d) => ({ ...d, ...future[0] }));
     setFuture((f) => f.slice(1));
+    setSelection({ start: 0, end: 0 });
   }
   async function save() {
     if (!validation.valid || !draft.name.trim()) return;
@@ -77,7 +102,9 @@ export function SequenceEditor({
         'Séquence enregistrée.',
       )
     )
-      setDraft(saved);
+      setDraft((current) =>
+        current === draft ? saved : { ...current, updatedAt: saved.updatedAt },
+      );
   }
   useEffect(() => {
     function key(e: KeyboardEvent) {
@@ -93,6 +120,36 @@ export function SequenceEditor({
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   });
+  useEffect(() => {
+    const stop = () => {
+      dragAnchor.current = null;
+    };
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    window.addEventListener('blur', stop);
+    return () => {
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+      window.removeEventListener('blur', stop);
+    };
+  }, []);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const capture = (event: InputEvent) => {
+      let start = input.selectionStart,
+        end = input.selectionEnd;
+      if (start === end && event.inputType === 'deleteContentBackward')
+        start = Math.max(0, start - 1);
+      if (start === end && event.inputType === 'deleteContentForward') end++;
+      editHint.current = {
+        start: normalizeSequence(input.value.slice(0, start)).length,
+        end: normalizeSequence(input.value.slice(0, end)).length,
+      };
+    };
+    input.addEventListener('beforeinput', capture);
+    return () => input.removeEventListener('beforeinput', capture);
+  }, [view]);
   const hits = useMemo(() => {
     try {
       return motif.trim() ? findMotifs(normalized, motif) : [];
@@ -111,8 +168,18 @@ export function SequenceEditor({
   }));
   function selectedSequence() {
     return selection.end > selection.start
-      ? normalizeSequence(draft.sequence.slice(selection.start, selection.end))
+      ? normalized.slice(selection.start, selection.end)
       : normalized;
+  }
+  function chooseRange(start: number, end: number) {
+    if (start < 0 || end <= start || end > normalized.length) return;
+    setSelection({ start, end });
+    setRangeStart(String(start + 1));
+    setRangeEnd(String(end));
+    setPage(Math.floor(start / pageSize));
+    setView('colored');
+    keyboardAnchor.current = start;
+    cursor.current = end - 1;
   }
   async function copy() {
     try {
@@ -122,10 +189,32 @@ export function SequenceEditor({
       notify('Copie indisponible. Sélectionne le texte et utilise Ctrl+C.');
     }
   }
-  const selectionStart = normalizeSequence(draft.sequence.slice(0, selection.start)).length + 1;
-  const selectionLength = normalizeSequence(
-    draft.sequence.slice(selection.start, selection.end),
-  ).length;
+  const selectionStart = selection.start + 1;
+  const selectionLength = selection.end - selection.start;
+  const selectedText = normalized.slice(selection.start, selection.end);
+  const selectedValid = selectionLength > 0 && validateSequence(selectedText).valid;
+  useEffect(() => {
+    if (selection.end > selection.start) {
+      setRangeStart(String(selection.start + 1));
+      setRangeEnd(String(selection.end));
+    }
+  }, [selection.start, selection.end]);
+  const positions = useMemo(() => {
+    const result = new Map<number, typeof draft.annotations>();
+    for (const a of draft.annotations) {
+      if (a.start === null || a.end === null) continue;
+      for (
+        let i = Math.max(a.start - 1, visiblePage * pageSize);
+        i < Math.min(a.end, (visiblePage + 1) * pageSize);
+        i++
+      ) {
+        const entries = result.get(i);
+        if (entries) entries.push(a);
+        else result.set(i, [a]);
+      }
+    }
+    return result;
+  }, [draft.annotations, visiblePage, pageSize]);
   return (
     <>
       <Heading
@@ -229,29 +318,151 @@ export function SequenceEditor({
                   value={draft.sequence}
                   spellCheck={false}
                   maxLength={1_000_000}
+                  onKeyDown={(e) => {
+                    if (!(e.ctrlKey || e.metaKey)) return;
+                    if (e.key.toLowerCase() === 'z') {
+                      e.preventDefault();
+                      e.shiftKey ? redo() : undo();
+                    }
+                    if (e.key.toLowerCase() === 'y') {
+                      e.preventDefault();
+                      redo();
+                    }
+                  }}
                   onChange={(e) => changeSequence(e.target.value)}
                   onSelect={(e) =>
                     setSelection({
-                      start: e.currentTarget.selectionStart,
-                      end: e.currentTarget.selectionEnd,
+                      start: normalizeSequence(
+                        draft.sequence.slice(0, e.currentTarget.selectionStart),
+                      ).length,
+                      end: normalizeSequence(draft.sequence.slice(0, e.currentTarget.selectionEnd))
+                        .length,
                     })
                   }
                   placeholder="Saisir ou coller une séquence ADN…"
                 />
               ) : (
                 <div className="sequence-view">
-                  {rows.length ? (
-                    rows.map((row) => (
-                      <div className="sequence-row" key={row.position}>
-                        <span className="row-position">{number(row.position)}</span>
-                        <span className="base-group">
-                          <Bases sequence={row.text} />
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="muted">Cette séquence est vide.</p>
-                  )}
+                  <p className="muted small-text">
+                    Glisse sur les bases pour sélectionner une région. Au clavier : flèches pour te
+                    déplacer, Maj + flèches pour étendre.
+                  </p>
+                  <div
+                    className="selectable-sequence"
+                    tabIndex={0}
+                    role="textbox"
+                    aria-label="Séquence colorée sélectionnable"
+                    aria-readonly="true"
+                    aria-multiline="true"
+                    onCopy={(e) => {
+                      e.preventDefault();
+                      e.clipboardData.setData('text/plain', selectedSequence());
+                    }}
+                    onPointerDown={(e) => {
+                      const cell = (e.target as HTMLElement).closest<HTMLElement>(
+                        '[data-base-index]',
+                      );
+                      if (!cell || e.button !== 0) return;
+                      e.preventDefault();
+                      e.currentTarget.focus();
+                      const index = Number(cell.dataset.baseIndex);
+                      if (!e.shiftKey) keyboardAnchor.current = index;
+                      dragAnchor.current = keyboardAnchor.current;
+                      cursor.current = index;
+                      setSelection({
+                        start: Math.min(dragAnchor.current, index),
+                        end: Math.max(dragAnchor.current, index) + 1,
+                      });
+                    }}
+                    onPointerMove={(e) => {
+                      if (dragAnchor.current === null) return;
+                      const cell = (e.target as HTMLElement).closest<HTMLElement>(
+                        '[data-base-index]',
+                      );
+                      if (!cell) return;
+                      const index = Number(cell.dataset.baseIndex);
+                      cursor.current = index;
+                      setSelection({
+                        start: Math.min(dragAnchor.current, index),
+                        end: Math.max(dragAnchor.current, index) + 1,
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (!normalized.length) return;
+                      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+                        e.preventDefault();
+                        setSelection({ start: 0, end: normalized.length });
+                        return;
+                      }
+                      const moves: Record<string, number> = {
+                        ArrowLeft: -1,
+                        ArrowRight: 1,
+                        ArrowUp: -bpl,
+                        ArrowDown: bpl,
+                      };
+                      if (!(e.key in moves)) return;
+                      e.preventDefault();
+                      const index = Math.max(
+                        0,
+                        Math.min(normalized.length - 1, cursor.current + moves[e.key]),
+                      );
+                      if (!e.shiftKey) keyboardAnchor.current = index;
+                      cursor.current = index;
+                      setSelection({
+                        start: Math.min(keyboardAnchor.current, index),
+                        end: Math.max(keyboardAnchor.current, index) + 1,
+                      });
+                      setPage(Math.floor(index / pageSize));
+                    }}
+                  >
+                    {rows.length ? (
+                      rows.map((row) => (
+                        <div className="sequence-row" key={row.position}>
+                          <span className="row-position">{number(row.position)}</span>
+                          <span className="base-group">
+                            {row.text.split('').map((base, i) => {
+                              const index = row.position - 1 + i;
+                              const annotations = positions.get(index) ?? [];
+                              const colors = [...new Set(annotations.map((a) => a.color))].slice(
+                                0,
+                                8,
+                              );
+                              const background =
+                                colors.length > 1
+                                  ? `linear-gradient(to bottom, ${colors.map((color, n) => `${color} ${(n * 100) / colors.length}% ${((n + 1) * 100) / colors.length}%`).join(', ')})`
+                                  : colors[0];
+                              return (
+                                <span
+                                  key={index}
+                                  data-base-index={index}
+                                  className={`nucleotide base-${'ATGC'.includes(base) ? base.toLowerCase() : 'n'} ${annotations.length ? 'annotated-base' : ''} ${index >= selection.start && index < selection.end ? 'selected-base' : ''} ${state.settings.groupBases && i > 0 && i % 10 === 0 ? 'base-spacer' : ''}`}
+                                  style={background ? { background } : undefined}
+                                  title={[
+                                    `${index + 1} · ${base}`,
+                                    ...annotations
+                                      .slice(0, 8)
+                                      .map(
+                                        (a) =>
+                                          `${a.name} (${a.start}–${a.end})${a.needsReview ? ' · À vérifier' : ''}${a.notes ? '\n' + a.notes : ''}`,
+                                      ),
+                                    ...(annotations.length > 8
+                                      ? [
+                                          `Et ${annotations.length - 8} autres annotations, listées ci-dessous.`,
+                                        ]
+                                      : []),
+                                  ].join('\n')}
+                                >
+                                  {base}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="muted">Cette séquence est vide.</p>
+                    )}
+                  </div>
                   <div className="toolbar">
                     <button
                       className="button small secondary"
@@ -283,6 +494,16 @@ export function SequenceEditor({
                   . Alphabet ADN IUPAC attendu.
                 </div>
               )}
+              {selectedValid && (
+                <div className="selection-summary" aria-live="polite">
+                  <strong>
+                    {selectionStart}–{selection.end} · {number(selectionLength)} nt
+                  </strong>
+                  <span>{percent((100 * selectionLength) / normalized.length)} du total</span>
+                  <span>GC {percent(sequenceStats(selectedText).gc)}</span>
+                  <a href="#sequence-annotations">Annoter cette région ↓</a>
+                </div>
+              )}
               <div className="toolbar">
                 <button
                   className="button small secondary"
@@ -307,7 +528,13 @@ export function SequenceEditor({
                 <button
                   className="button small secondary"
                   disabled={!validation.valid}
-                  onClick={() => changeSequence(reverseComplement(normalized))}
+                  onClick={() => {
+                    changeSnapshot({
+                      sequence: reverseComplement(normalized),
+                      annotations: reverseAnnotations(draft.annotations, normalized.length),
+                    });
+                    setSelection({ start: 0, end: 0 });
+                  }}
                 >
                   Complément inverse
                 </button>
@@ -334,21 +561,7 @@ export function SequenceEditor({
                           key={pos}
                           className="position-link"
                           onClick={() => {
-                            setView('edit');
-                            setTimeout(() => {
-                              inputRef.current?.focus();
-                              if (draft.sequence !== normalized) {
-                                changeSequence(normalized);
-                              }
-                              setTimeout(
-                                () =>
-                                  inputRef.current?.setSelectionRange(
-                                    pos - 1,
-                                    pos - 1 + normalizeSequence(motif).length,
-                                  ),
-                                0,
-                              );
-                            }, 0);
+                            chooseRange(pos - 1, pos - 1 + normalizeSequence(motif).length);
                           }}
                         >
                           {pos}
@@ -374,8 +587,78 @@ export function SequenceEditor({
               </label>
             </div>
           </div>
+          {validation.valid && (
+            <AnnotationsPanel
+              annotations={draft.annotations}
+              length={normalized.length}
+              selection={selection}
+              onSelect={chooseRange}
+              onChange={(annotations) => changeSnapshot({ sequence: draft.sequence, annotations })}
+            />
+          )}
         </div>
         <aside className="inspector">
+          <div className="panel selection-panel" aria-label="Statistiques de la sélection">
+            <div className="panel-heading">
+              <h3>Sélection</h3>
+            </div>
+            <div className="panel-body">
+              <p>
+                {selectionLength
+                  ? `${selectionStart}–${selectionStart + selectionLength - 1} · ${selectionLength} nt`
+                  : 'Sélectionne des bases dans l’éditeur.'}
+              </p>
+              <p className="muted small-text">Coordonnées à partir de 1, bornes incluses.</p>
+              {selectedValid && (
+                <>
+                  <div className="metric">
+                    <span>Part de la séquence</span>
+                    <strong>{percent((100 * selectionLength) / normalized.length)}</strong>
+                  </div>
+                  <Composition sequence={selectedText} />
+                </>
+              )}
+              {selectionLength > 0 && !selectedValid && (
+                <p className="notice warning">La sélection contient des caractères invalides.</p>
+              )}
+              <form
+                className="range-selector"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  chooseRange(Number(rangeStart) - 1, Number(rangeEnd));
+                }}
+              >
+                <label className="field">
+                  Début de sélection
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={normalized.length}
+                    required
+                    value={rangeStart}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  Fin de sélection
+                  <input
+                    className="input"
+                    type="number"
+                    min={Number(rangeStart) || 1}
+                    max={normalized.length}
+                    required
+                    value={rangeEnd}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                  />
+                </label>
+
+                <button className="button small secondary" disabled={!normalized.length}>
+                  Sélectionner la région
+                </button>
+              </form>
+            </div>
+          </div>
           <div className="panel">
             <div className="panel-heading">
               <h3>Propriétés</h3>
@@ -416,19 +699,6 @@ export function SequenceEditor({
               {validation.valid && <Composition sequence={normalized} />}
             </div>
           </div>
-          <div className="panel">
-            <div className="panel-heading">
-              <h3>Sélection</h3>
-            </div>
-            <div className="panel-body">
-              <p>
-                {selectionLength
-                  ? `${selectionStart}–${selectionStart + selectionLength - 1} · ${selectionLength} nt`
-                  : 'Sélectionne des bases dans l’éditeur.'}
-              </p>
-              <p className="muted small-text">Coordonnées à partir de 1, bornes incluses.</p>
-            </div>
-          </div>
           <button
             className="button secondary"
             disabled={!validation.valid || !normalized.length}
@@ -442,6 +712,10 @@ export function SequenceEditor({
             <Icon name="download" />
             Exporter FASTA
           </button>
+          <p className="muted small-text">
+            FASTA conserve les bases. La sauvegarde complète conserve aussi les annotations et les
+            notes.
+          </p>
         </aside>
       </div>
     </>

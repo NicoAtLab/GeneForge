@@ -14,8 +14,18 @@ export interface SequenceRecord {
   sequence: string;
   topology: 'linear' | 'circular';
   notes: string;
+  annotations: SequenceAnnotation[];
   createdAt: string;
   updatedAt: string;
+}
+export interface SequenceAnnotation {
+  id: string;
+  name: string;
+  start: number | null;
+  end: number | null;
+  color: string;
+  notes: string;
+  needsReview: boolean;
 }
 export interface Primer {
   id: string;
@@ -35,9 +45,15 @@ export interface Settings {
   organization: string;
   theme: 'dark' | 'light' | 'system';
   basesPerLine: number;
+  accent: 'mint' | 'blue' | 'violet' | 'amber';
+  density: 'comfortable' | 'compact';
+  sequenceFontSize: number;
+  basePalette: 'classic' | 'contrast' | 'mono';
+  groupBases: boolean;
+  defaultSequenceView: 'edit' | 'colored';
 }
 export interface WorkspaceState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   revision: number;
   projects: Project[];
   sequences: SequenceRecord[];

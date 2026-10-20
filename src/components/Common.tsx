@@ -82,11 +82,13 @@ export function Composition({ sequence }: { sequence: string }) {
             <i className={`base-${e.name[0].toLowerCase()}`} />
             {e.name}
             <strong>{e.value}</strong>
+            <small>{percent(s.length ? (100 * e.value) / s.length : null)}</small>
           </span>
         ))}
       </div>
       <p className="muted small-text">
-        GC : {percent(s.gc)} · Bases ambiguës exclues du dénominateur.
+        Pourcentages : toutes les bases. GC : {percent(s.gc)} · AT : {percent(s.at)}. GC/AT : bases
+        ambiguës exclues du dénominateur.
       </p>
     </>
   );

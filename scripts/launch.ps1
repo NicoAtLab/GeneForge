@@ -12,7 +12,7 @@ $address = 'http://127.0.0.1:4173'
 function Test-GeneForge {
     try {
         $health = Invoke-RestMethod -Uri "$address/api/health" -TimeoutSec 2
-        return ($health.status -eq 'ok' -and $health.schemaVersion -eq 1 -and $health.primer3.engine -eq 'primer3-py')
+        return ($health.status -eq 'ok' -and $health.schemaVersion -eq 2 -and $health.primer3.engine -eq 'primer3-py')
     } catch { return $false }
 }
 if (!(Test-GeneForge)) {

@@ -48,6 +48,7 @@ function sampleState(revision = 0): WorkspaceState {
         name: 'Exemple',
         sequence: 'ACGTNRY',
         topology: 'linear',
+        annotations: [],
         notes: 'Test',
         createdAt: date,
         updatedAt: date,
