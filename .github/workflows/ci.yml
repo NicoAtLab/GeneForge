@@ -1,0 +1,36 @@
+name: GeneForge validation
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          python -m pip install --target .python-deps --only-binary=:all: -r requirements-science.txt
+      - run: pnpm run build
+      - run: pnpm test
+      - run: python tests/primer3_test.py
+      - run: pnpm exec playwright install chromium --with-deps --only-shell
+      - run: pnpm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-checks-${{ matrix.os }}
+          path: artifacts/*.png
