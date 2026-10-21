@@ -1,4 +1,4 @@
-# Validation de la livraison 0.4.0
+# Validation de la livraison 0.5.0
 
 Validation locale réalisée le 21 octobre 2026, sous Windows avec Node.js 24.19.0, TypeScript 5.9.3, Vite 7.3.7, Python 3.12.14, Primer3-py 2.3.1 et Chromium Headless via Playwright 1.64.0.
 
@@ -6,12 +6,13 @@ Validation locale réalisée le 21 octobre 2026, sous Windows avec Node.js 24.19
 
 - Vérification TypeScript strict : réussie.
 - Compilation Vite : réussie.
-- Tests TypeScript/Node : 56 réussis (cœur scientifique, formats, HTTP, SQLite, migrations, recherche, annotations, gels et protocole IA).
-- Tests Python : 7 réussis, dont la valeur numérique de référence publiée par Primer3-py.
+- Tests TypeScript/Node : 60 réussis (cœur scientifique, formats, HTTP, SQLite, migrations, recherche, annotations, gels, tri naturel et protocole IA).
+- Tests Python : 9 réussis, dont la référence Primer3-py et la comparaison des Tm/hétérodimères avec le moteur réel.
 - 12 parcours navigateur réussis : création de projet ; création/édition/rechargement de séquence ; erreurs ADN, annulation et recherche ; sélection et annotations superposées ; suivi des annotations après édition, annulation, complément inverse et rechargement ; bibliothèque/doublons ; calcul Primer3 et modification des paramètres ; import/export FASTA ; import CSV et archivage ; préférences/export de sauvegarde ; recherche globale/suppression de projet/restauration ; présentation responsive et thèmes.
 - 5 parcours navigateur supplémentaires réussis : recherche longue, absente, invalide, répétée et sur le complément inverse ; aperçu des sources Up/Down/Amorce, ajout, enregistrement et dédoublonnage ; complément inverse/annulation, export et modification de la fiche source ; suppression de sources et sauvegarde/restauration sans perte des copies ; présentation mobile des panneaux et de la fiche source. Total : **17 parcours**.
 - Aucune erreur JavaScript d'exécution observée dans ces parcours.
-- 8 parcours Notes/Gels/Assistant réussis : image originale et pistes égales ; légendes/amorces/Primer3 ; contours et historique ; exports PNG/CSV ; notes, copie et PDF ; contexte IA et récupération d'erreur ; sauvegarde/restauration ; présentation mobile. Total général : **25 parcours**.
+- 6 nouveaux parcours : tri naturel ; calcul/export de paire avec Primer3 ; vue continue d’un million de bases, molette et zoom ; accents et thème clair ; douze pistes détectées à l’import ; présentation mobile. Total général : **31 parcours**.
+- 8 parcours Notes/Gels/Assistant réussis : image originale et pistes égales ; légendes/amorces/Primer3 ; contours et historique ; exports PNG/CSV ; notes, copie et PDF ; contexte IA et récupération d'erreur ; sauvegarde/restauration ; présentation mobile.
 - Largeurs vérifiées : 1440, 1080 et 390 pixels. Absence de débordement horizontal de la page d'accueil, de l'éditeur annoté et de la fenêtre source sur mobile. Les tableaux et vues de séquences disposent de défilement interne.
 
 Les captures de tests restent dans artifacts/, hors Git. Les parcours travaillent uniquement sur des données artificielles et un dossier SQLite temporaire. La base de travail utilisateur n'est pas utilisée pour les tests.
@@ -34,7 +35,7 @@ Le contrôle de révision empêche une fenêtre ancienne d'écraser silencieusem
 
 La sauvegarde JSON comprend le modèle complet et une empreinte SHA-256. L'empreinte détecte les altérations accidentelles ; elle n'est pas une signature cryptographique d'un tiers. Une restauration valide écrit une sauvegarde de l'espace précédent avant son remplacement.
 
-La pagination limite le DOM de la vue colorée à 12 lignes. L'édition texte et les statistiques travaillent encore sur le document complet : aucune promesse de performance interactive sur des génomes de plusieurs mégabases.
+La vue colorée utilise une zone de défilement continue avec virtualisation des lignes visibles et d’une marge. Le test sur un million de bases vérifie le défilement à la molette, la recherche de la dernière base et le maintien d’un DOM borné. L'édition texte et les statistiques travaillent encore sur le document complet ; la limite applicative reste d’un million de bases.
 
 Les migrations sont vérifiées à partir de véritables bases SQLite v1 et v2 : données, annotations, préférences et révision conservées, fichier de récupération identique au modèle d'origine, réouverture sans seconde migration. Les sauvegardes anciennes sont contrôlées avant conversion ; une empreinte altérée, un schéma futur, des annotations hors limites ou une référence vers une copie source absente sont refusés.
 

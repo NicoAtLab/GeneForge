@@ -189,6 +189,68 @@ export async function analyze(input: unknown): Promise<unknown> {
   return result;
 }
 
+export function validatePairAnalysis(value: unknown) {
+  const v = value as Record<string, unknown>;
+  const keys = ['sequence1', 'sequence2', 'mv_conc', 'dv_conc', 'dntp_conc', 'dna_conc', 'temp_c'];
+  if (
+    !v ||
+    typeof v !== 'object' ||
+    Array.isArray(v) ||
+    Object.keys(v).length !== keys.length ||
+    keys.some((k) => !Object.hasOwn(v, k))
+  )
+    throw new ApiError(
+      400,
+      'INVALID_ANALYSIS',
+      'Les deux séquences et les conditions de la paire sont requises.',
+    );
+  const shared = {
+    mv_conc: v.mv_conc,
+    dv_conc: v.dv_conc,
+    dntp_conc: v.dntp_conc,
+    dna_conc: v.dna_conc,
+  };
+  const first = validateAnalysis({ sequence: v.sequence1, ...shared }),
+    second = validateAnalysis({ sequence: v.sequence2, ...shared });
+  if (first.sequence.length === 60 && second.sequence.length === 60)
+    throw new ApiError(
+      400,
+      'INVALID_ANALYSIS',
+      'Au moins une amorce doit contenir moins de 60 bases.',
+    );
+  if (typeof v.temp_c !== 'number' || !Number.isFinite(v.temp_c) || v.temp_c < 0 || v.temp_c > 100)
+    throw new ApiError(
+      400,
+      'INVALID_ANALYSIS',
+      'Température d’évaluation attendue entre 0 et 100 °C.',
+    );
+  return {
+    operation: 'pair',
+    sequence1: first.sequence,
+    sequence2: second.sequence,
+    ...shared,
+    temp_c: v.temp_c,
+  };
+}
+export async function analyzePair(input: unknown): Promise<unknown> {
+  const parameters = validatePairAnalysis(input);
+  const result = await runPython(
+    [join(workspaceRoot, 'src', 'core', 'primer3_adapter.py')],
+    JSON.stringify(parameters),
+  );
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    !('engine' in result) ||
+    result.engine !== 'primer3-py' ||
+    !('deltaTm' in result) ||
+    typeof result.deltaTm !== 'number' ||
+    !Number.isFinite(result.deltaTm)
+  )
+    throw new ApiError(502, 'ANALYSIS_FAILED', 'Réponse de paire invalide.');
+  return result;
+}
+
 export interface EngineHealth {
   available: boolean;
   engine: 'primer3-py';

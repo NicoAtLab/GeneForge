@@ -61,7 +61,7 @@ export interface Settings {
   organization: string;
   theme: 'dark' | 'light' | 'system';
   basesPerLine: number;
-  accent: 'mint' | 'blue' | 'violet' | 'amber';
+  accent: 'mint' | 'blue' | 'violet' | 'amber' | 'coral' | 'rose' | 'forest' | 'cyan';
   density: 'comfortable' | 'compact';
   sequenceFontSize: number;
   basePalette: 'classic' | 'contrast' | 'mono';

@@ -69,6 +69,36 @@ def analyze(payload: object) -> dict:
     }
 
 
+def analyze_pair(payload: object) -> dict:
+    allowed = {"operation", "sequence1", "sequence2", "temp_c", *PARAMETER_LIMITS}
+    if not isinstance(payload, dict) or set(payload) != allowed or payload["operation"] != "pair":
+        raise ValueError("Champs de paire invalides.")
+    temperature = payload["temp_c"]
+    if type(temperature) not in (int, float) or not math.isfinite(temperature) or not 0 <= temperature <= 100:
+        raise ValueError("La température d'évaluation doit être comprise entre 0 et 100 °C.")
+    parameters = {name: payload[name] for name in PARAMETER_LIMITS}
+    first = analyze({"sequence": payload["sequence1"], **parameters})
+    second = analyze({"sequence": payload["sequence2"], **parameters})
+    seq1 = re.sub(r"\s", "", payload["sequence1"]).upper()
+    seq2 = re.sub(r"\s", "", payload["sequence2"]).upper()
+    if len(seq1) == 60 and len(seq2) == 60:
+        raise ValueError("Au moins une amorce doit contenir moins de 60 bases pour l'hétérodimère.")
+    import primer3
+    interaction = primer3.calc_heterodimer(seq1, seq2, **parameters, temp_c=temperature,
+                                         max_loop=30, output_structure=True)
+    found = bool(interaction.structure_found)
+    if found and not all(math.isfinite(v) for v in (interaction.tm, interaction.dg)):
+        raise ValueError("Primer3 ne fournit pas de résultat fini pour cette interaction.")
+    return {
+        "first": first, "second": second, "deltaTm": abs(first["tm"] - second["tm"]),
+        "heterodimer": {"structureFound": found, "tm": interaction.tm if found else None,
+                        "dgCalMol": interaction.dg if found else None,
+                        "structure": interaction.ascii_structure if found else None},
+        "temperature": float(temperature), "maxLoop": 30,
+        "engine": "primer3-py", "version": primer3.__version__, "parameters": first["parameters"],
+    }
+
+
 def reject_constant(value: str) -> None:
     raise ValueError(f"Constante JSON non autorisée : {value}.")
 
@@ -79,7 +109,7 @@ def main() -> int:
         if len(raw) > 32768:
             raise ValueError("Requête trop volumineuse (32 Ko maximum).")
         payload = json.loads(raw.decode("utf-8"), parse_constant=reject_constant)
-        output = analyze(payload)
+        output = analyze_pair(payload) if isinstance(payload, dict) and payload.get("operation") == "pair" else analyze(payload)
         print(json.dumps(output, ensure_ascii=True, allow_nan=False))
         return 0
     except (ValueError, TypeError, OverflowError, RuntimeError) as exc:

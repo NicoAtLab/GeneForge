@@ -52,7 +52,19 @@ L'adaptateur `src/core/primer3_adapter.py` appelle `primer3.calc_tm` dans **Prim
 
 Ces bornes sont des limites applicatives, pas une validation expérimentale de toute cette plage. Tous les nombres doivent être finis. Le cas sans concentration ionique effective positive (`mv_conc=0` et `dv_conc≤dntp_conc`) est refusé. Le calcul dépend des conditions renseignées ; il ne détermine pas un protocole expérimental ni une température d'hybridation recommandée.
 
-L'adaptateur reçoit un unique objet JSON sur l'entrée standard et renvoie un unique objet JSON sur la sortie standard. En cas d'erreur, il renvoie `{ "error": "..." }` et termine avec le code 1. Aucun appel de conception d'amorces n'est exposé. Les alignements Biopython, les structures secondaires et les autres analyses du cahier des charges restent hors du périmètre de ce MVP. La future intégration d'alignements suivra [l'API PairwiseAligner officielle](https://biopython.org/docs/latest/Tutorial/chapter_pairwise.html).
+L'adaptateur reçoit un unique objet JSON sur l'entrée standard et renvoie un unique objet JSON sur la sortie standard. En cas d'erreur, il renvoie `{ "error": "..." }` et termine avec le code 1. Aucun appel de conception d'amorces n'est exposé. Les alignements Biopython, hairpins et homodimères restent hors du périmètre. La future intégration d'alignements suivra [l'API PairwiseAligner officielle](https://biopython.org/docs/latest/Tutorial/chapter_pairwise.html).
+
+## Analyse d’une paire
+
+Les deux séquences sont saisies en 5′→3′, sans complémentation préalable de la Reverse. Les Tm individuelles utilisent le modèle et les conditions décrits ci-dessus ; l’écart est leur différence absolue. L’interaction est calculée par `primer3.calc_heterodimer` avec les concentrations saisies, `max_loop=30`, une température d’évaluation ΔG entre 0 et 100 °C et une structure ASCII. Chaque oligo est limité à 2–60 bases canoniques ; au moins un contient moins de 60 bases, conformément à la limite du moteur pour cette interaction.
+
+La [documentation de ThermoResult](https://libnano.github.io/primer3-py/api/thermoanalysis.html) exprime ΔG en cal/mol ; l’interface le convertit en kcal/mol en divisant par 1 000, et l’export conserve aussi la valeur originale. Une structure absente conserve des valeurs nulles pour l’interaction. Aucun seuil arbitraire ne déclare la paire compatible : ces résultats ne prédisent pas à eux seuls une réussite PCR ou une spécificité génomique.
+
+## Proposition de pistes de gel
+
+Pour chaque colonne du recadrage, le logiciel moyenne les 2 % de pixels les plus intenses selon la polarité choisie, puis lisse horizontalement ce profil. Il recherche des segments dépassant le fond estimé, fusionne les petits espaces et vérifie la régularité des centres. Des intervalles proches de multiples entiers peuvent indiquer une piste interne sans signal. Il propose au maximum 48 pistes ; les cas sans contraste ou sans espacement cohérent restent non concluants. Le fond est estimé depuis les bords à l’import et reste réglable.
+
+Cette méthode détermine des pistes visibles, pas les positions de puits connus indépendamment de l’image. Les bandes restent sélectionnées manuellement. La proposition doit être contrôlée sur la figure, particulièrement pour les pistes vides et les marges du gel.
 
 ## FASTA et CSV
 

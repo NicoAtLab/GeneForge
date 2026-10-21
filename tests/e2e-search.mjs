@@ -118,7 +118,7 @@ try {
       await page
         .getByText('Trouvé : 1 occurrence(s) · fragment de 90 nt', { exact: true })
         .waitFor();
-      await page.getByText('Page 2 / 3', { exact: true }).waitFor();
+      await page.locator('.continuous-status').waitFor();
       assert.equal(await page.locator('.search-hit').count(), 90);
       await search.fill('ACACACACTGTGTGTGACAA');
       await page

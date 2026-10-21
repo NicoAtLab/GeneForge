@@ -89,6 +89,7 @@ export function SettingsPage({
               <label className="field">
                 Thème
                 <select
+                  aria-label="Thème"
                   className="select"
                   value={settings.theme}
                   onChange={(e) =>
@@ -103,6 +104,7 @@ export function SettingsPage({
               <label className="field">
                 Couleur d’accent
                 <select
+                  aria-label="Couleur d’accent"
                   className="select"
                   value={settings.accent}
                   onChange={(e) =>
@@ -113,6 +115,10 @@ export function SettingsPage({
                   <option value="blue">Bleu</option>
                   <option value="violet">Violet</option>
                   <option value="amber">Ambre</option>
+                  <option value="coral">Corail</option>
+                  <option value="rose">Rose</option>
+                  <option value="forest">Forêt</option>
+                  <option value="cyan">Cyan</option>
                 </select>
               </label>
               <label className="field">
@@ -149,7 +155,7 @@ export function SettingsPage({
                 Taille des bases : {settings.sequenceFontSize} px
                 <input
                   type="range"
-                  min={12}
+                  min={8}
                   max={22}
                   step={1}
                   value={settings.sequenceFontSize}
@@ -280,7 +286,7 @@ export function SettingsPage({
           <div className="panel">
             <div className="panel-heading">
               <h3>
-                GeneForge <span className="tag">0.4.0</span>
+                GeneForge <span className="tag">0.5.0</span>
               </h3>
             </div>
             <div className="panel-body">

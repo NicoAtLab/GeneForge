@@ -45,8 +45,15 @@ export function SequenceEditor({
     [future, setFuture] = useState<Snapshot[]>([]);
   const [searchMatches, setSearchMatches] = useState<SequenceMatch[]>([]);
   const [selection, setSelection] = useState({ start: 0, end: 0 }),
-    [page, setPage] = useState(0),
     [view, setView] = useState<'edit' | 'colored'>(state.settings.defaultSequenceView);
+  const [scrollTop, setScrollTop] = useState(0),
+    [viewportHeight, setViewportHeight] = useState(460);
+  const [zoom, setZoom] = useState(state.settings.sequenceFontSize),
+    [bpl, setBpl] = useState(state.settings.basesPerLine);
+  const [pendingPosition, setPendingPosition] = useState<{ index: number; top?: boolean } | null>(
+    null,
+  );
+  const viewportRef = useRef<HTMLDivElement>(null);
   const [rangeStart, setRangeStart] = useState('1'),
     [rangeEnd, setRangeEnd] = useState('1');
   const inputRef = useRef<HTMLTextAreaElement>(null),
@@ -173,23 +180,52 @@ export function SequenceEditor({
     input.addEventListener('beforeinput', capture);
     return () => input.removeEventListener('beforeinput', capture);
   }, [view]);
-  const bpl = state.settings.basesPerLine;
-  const pageSize = bpl * 12,
-    totalPages = Math.max(1, Math.ceil(normalized.length / pageSize));
-  const visiblePage = Math.min(page, totalPages - 1),
-    part = normalized.slice(visiblePage * pageSize, (visiblePage + 1) * pageSize);
+  const rowHeight = Math.ceil(zoom * 1.8) + 6;
+  const totalRows = Math.ceil(normalized.length / bpl);
+  const firstRow = Math.max(0, Math.min(totalRows - 1, Math.floor(scrollTop / rowHeight)) - 4);
+  const endRow = Math.min(totalRows, firstRow + Math.ceil(viewportHeight / rowHeight) + 9);
+  const visibleStart = firstRow * bpl,
+    visibleEnd = Math.min(normalized.length, endRow * bpl);
+  const pageSize = Math.max(0, visibleEnd - visibleStart),
+    part = normalized.slice(visibleStart, visibleEnd);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setViewportHeight(el.clientHeight));
+    observer.observe(el);
+    setViewportHeight(el.clientHeight);
+    setScrollTop(el.scrollTop);
+    return () => observer.disconnect();
+  }, [view]);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || !pendingPosition) return;
+    const offset = Math.floor(pendingPosition.index / bpl) * rowHeight;
+    if (
+      pendingPosition.top ||
+      offset < el.scrollTop ||
+      offset + rowHeight > el.scrollTop + el.clientHeight
+    ) {
+      el.scrollTop = Math.max(0, offset - (pendingPosition.top ? 0 : rowHeight * 2));
+      setScrollTop(el.scrollTop);
+    }
+  }, [view, pendingPosition, bpl, rowHeight]);
+  function changeZoom(next: number) {
+    setPendingPosition({ index: Math.floor(scrollTop / rowHeight) * bpl, top: true });
+    setZoom(Math.max(8, Math.min(22, next)));
+  }
   const searchMask = useMemo(() => {
     const mask = new Uint8Array(pageSize);
-    const offset = visiblePage * pageSize;
+    const offset = visibleStart;
     for (const match of searchMatches) {
       const start = Math.max(0, match.start - 1 - offset),
         end = Math.min(pageSize, match.end - offset);
       if (start < end) mask.fill(1, start, end);
     }
     return mask;
-  }, [searchMatches, visiblePage, pageSize]);
+  }, [searchMatches, visibleStart, pageSize]);
   const rows = Array.from({ length: Math.ceil(part.length / bpl) }, (_, i) => ({
-    position: visiblePage * pageSize + i * bpl + 1,
+    position: visibleStart + i * bpl + 1,
     text: part.slice(i * bpl, (i + 1) * bpl),
   }));
   function selectedSequence() {
@@ -202,7 +238,7 @@ export function SequenceEditor({
     setSelection({ start, end });
     setRangeStart(String(start + 1));
     setRangeEnd(String(end));
-    setPage(Math.floor(start / pageSize));
+    setPendingPosition({ index: start });
     setView('colored');
     keyboardAnchor.current = start;
     cursor.current = end - 1;
@@ -229,18 +265,14 @@ export function SequenceEditor({
     const result = new Map<number, typeof draft.annotations>();
     for (const a of draft.annotations) {
       if (a.start === null || a.end === null) continue;
-      for (
-        let i = Math.max(a.start - 1, visiblePage * pageSize);
-        i < Math.min(a.end, (visiblePage + 1) * pageSize);
-        i++
-      ) {
+      for (let i = Math.max(a.start - 1, visibleStart); i < Math.min(a.end, visibleEnd); i++) {
         const entries = result.get(i);
         if (entries) entries.push(a);
         else result.set(i, [a]);
       }
     }
     return result;
-  }, [draft.annotations, visiblePage, pageSize]);
+  }, [draft.annotations, visibleStart, visibleEnd]);
   return (
     <>
       <Heading
@@ -342,9 +374,61 @@ export function SequenceEditor({
                 </span>
                 <span className="muted">ADN · IUPAC</span>
               </div>
+              <div className="sequence-zoom-toolbar">
+                <button
+                  className="button small secondary"
+                  aria-label="Dézoomer la séquence"
+                  disabled={zoom <= 8}
+                  onClick={() => changeZoom(zoom - 1)}
+                >
+                  −
+                </button>
+                <label>
+                  Zoom de la séquence
+                  <input
+                    aria-label="Zoom de la séquence"
+                    type="range"
+                    min={8}
+                    max={22}
+                    value={zoom}
+                    onChange={(e) => changeZoom(Number(e.target.value))}
+                  />
+                </label>
+                <button
+                  className="button small secondary"
+                  aria-label="Zoomer la séquence"
+                  disabled={zoom >= 22}
+                  onClick={() => changeZoom(zoom + 1)}
+                >
+                  +
+                </button>
+                <span className="tag">{zoom} px</span>
+                <label>
+                  Bases par ligne
+                  <select
+                    className="select"
+                    aria-label="Bases par ligne de la séquence"
+                    value={bpl}
+                    onChange={(e) => {
+                      setPendingPosition({
+                        index: Math.floor(scrollTop / rowHeight) * bpl,
+                        top: true,
+                      });
+                      setBpl(Number(e.target.value));
+                    }}
+                  >
+                    {[10, 30, 40, 60, 80, 100, 120, 180, 240].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               {view === 'edit' ? (
                 <textarea
                   className="sequence-input"
+                  style={{ fontSize: zoom }}
                   ref={inputRef}
                   aria-label="Séquence ADN"
                   value={draft.sequence}
@@ -380,7 +464,16 @@ export function SequenceEditor({
                     déplacer, Maj + flèches pour étendre.
                   </p>
                   <div
-                    className="selectable-sequence"
+                    className="selectable-sequence continuous-sequence"
+                    ref={viewportRef}
+                    style={
+                      {
+                        '--sequence-font-size': zoom + 'px',
+                        height: Math.min(460, Math.max(120, totalRows * rowHeight + 4)),
+                      } as React.CSSProperties
+                    }
+                    onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+                    data-visible-start={visibleStart}
                     tabIndex={0}
                     role="textbox"
                     aria-label="Séquence colorée sélectionnable"
@@ -396,7 +489,7 @@ export function SequenceEditor({
                       );
                       if (!cell || e.button !== 0) return;
                       e.preventDefault();
-                      e.currentTarget.focus();
+                      e.currentTarget.focus({ preventScroll: true });
                       const index = Number(cell.dataset.baseIndex);
                       if (!e.shiftKey) keyboardAnchor.current = index;
                       dragAnchor.current = keyboardAnchor.current;
@@ -444,76 +537,80 @@ export function SequenceEditor({
                         start: Math.min(keyboardAnchor.current, index),
                         end: Math.max(keyboardAnchor.current, index) + 1,
                       });
-                      setPage(Math.floor(index / pageSize));
+                      setPendingPosition({ index });
                     }}
                   >
-                    {rows.length ? (
-                      rows.map((row) => (
-                        <div className="sequence-row" key={row.position}>
-                          <span className="row-position">{number(row.position)}</span>
-                          <span className="base-group">
-                            {row.text.split('').map((base, i) => {
-                              const index = row.position - 1 + i;
-                              const annotations = positions.get(index) ?? [];
-                              const colors = [...new Set(annotations.map((a) => a.color))].slice(
-                                0,
-                                8,
-                              );
-                              const background =
-                                colors.length > 1
-                                  ? `linear-gradient(to bottom, ${colors.map((color, n) => `${color} ${(n * 100) / colors.length}% ${((n + 1) * 100) / colors.length}%`).join(', ')})`
-                                  : colors[0];
-                              return (
-                                <span
-                                  key={index}
-                                  data-base-index={index}
-                                  className={`nucleotide base-${'ATGC'.includes(base) ? base.toLowerCase() : 'n'} ${annotations.length ? 'annotated-base' : ''} ${searchMask[index - visiblePage * pageSize] ? 'search-hit' : ''} ${index >= selection.start && index < selection.end ? 'selected-base' : ''} ${state.settings.groupBases && i > 0 && i % 10 === 0 ? 'base-spacer' : ''}`}
-                                  style={background ? { background } : undefined}
-                                  title={[
-                                    `${index + 1} · ${base}`,
-                                    ...annotations
-                                      .slice(0, 8)
-                                      .map(
-                                        (a) =>
-                                          `${a.name} (${a.start}–${a.end})${a.needsReview ? ' · À vérifier' : ''}${a.notes ? '\n' + a.notes : ''}`,
-                                      ),
-                                    ...(annotations.length > 8
-                                      ? [
-                                          `Et ${annotations.length - 8} autres annotations, listées ci-dessous.`,
-                                        ]
-                                      : []),
-                                  ].join('\n')}
-                                >
-                                  {base}
-                                </span>
-                              );
-                            })}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="muted">Cette séquence est vide.</p>
-                    )}
-                  </div>
-                  <div className="toolbar">
-                    <button
-                      className="button small secondary"
-                      disabled={visiblePage === 0}
-                      onClick={() => setPage(visiblePage - 1)}
+                    <div
+                      className="sequence-scrollspace"
+                      style={{
+                        height: Math.max(rowHeight, totalRows * rowHeight),
+                        minWidth:
+                          76 +
+                          zoom *
+                            (0.72 * bpl +
+                              (state.settings.groupBases ? 0.7 * Math.floor((bpl - 1) / 10) : 0)),
+                      }}
                     >
-                      Précédent
-                    </button>
-                    <span className="muted">
-                      Page {visiblePage + 1} / {totalPages}
-                    </span>
-                    <button
-                      className="button small secondary"
-                      disabled={visiblePage + 1 >= totalPages}
-                      onClick={() => setPage(visiblePage + 1)}
-                    >
-                      Suivant
-                    </button>
+                      {rows.length ? (
+                        rows.map((row) => (
+                          <div
+                            className="sequence-row"
+                            key={row.position}
+                            style={{
+                              position: 'absolute',
+                              top: Math.floor((row.position - 1) / bpl) * rowHeight,
+                              height: rowHeight,
+                            }}
+                          >
+                            <span className="row-position">{number(row.position)}</span>
+                            <span className="base-group">
+                              {row.text.split('').map((base, i) => {
+                                const index = row.position - 1 + i;
+                                const annotations = positions.get(index) ?? [];
+                                const colors = [...new Set(annotations.map((a) => a.color))].slice(
+                                  0,
+                                  8,
+                                );
+                                const background =
+                                  colors.length > 1
+                                    ? `linear-gradient(to bottom, ${colors.map((color, n) => `${color} ${(n * 100) / colors.length}% ${((n + 1) * 100) / colors.length}%`).join(', ')})`
+                                    : colors[0];
+                                return (
+                                  <span
+                                    key={index}
+                                    data-base-index={index}
+                                    className={`nucleotide base-${'ATGC'.includes(base) ? base.toLowerCase() : 'n'} ${annotations.length ? 'annotated-base' : ''} ${searchMask[index - visibleStart] ? 'search-hit' : ''} ${index >= selection.start && index < selection.end ? 'selected-base' : ''} ${state.settings.groupBases && i > 0 && i % 10 === 0 ? 'base-spacer' : ''}`}
+                                    style={background ? { background } : undefined}
+                                    title={[
+                                      `${index + 1} · ${base}`,
+                                      ...annotations
+                                        .slice(0, 8)
+                                        .map(
+                                          (a) =>
+                                            `${a.name} (${a.start}–${a.end})${a.needsReview ? ' · À vérifier' : ''}${a.notes ? '\n' + a.notes : ''}`,
+                                        ),
+                                      ...(annotations.length > 8
+                                        ? [
+                                            `Et ${annotations.length - 8} autres annotations, listées ci-dessous.`,
+                                          ]
+                                        : []),
+                                    ].join('\n')}
+                                  >
+                                    {base}
+                                  </span>
+                                );
+                              })}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="muted">Cette séquence est vide.</p>
+                      )}
+                    </div>
                   </div>
+                  <p className="muted small-text continuous-status">
+                    Une seule vue · défilement à la molette · {number(normalized.length)} bases
+                  </p>
                 </div>
               )}
               {!validation.valid && (

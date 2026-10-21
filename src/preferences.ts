@@ -16,4 +16,10 @@ export const highlightColors = [
   { value: '#c4a2ef', label: 'Violet' },
   { value: '#f5a4bb', label: 'Rose' },
   { value: '#f1a56b', label: 'Orange' },
+  { value: '#5de1e6', label: 'Cyan' },
+  { value: '#ff807b', label: 'Corail' },
+  { value: '#b4d77c', label: 'Citron vert' },
+  { value: '#8fa8ff', label: 'Indigo' },
+  { value: '#e5b68b', label: 'Sable' },
+  { value: '#dd9ce4', label: 'Orchidée' },
 ];

@@ -88,7 +88,7 @@ try {
       await page.getByLabel('Rechercher dans cette séquence').fill('CGT');
       await page.getByText(/2 occurrence/).waitFor();
       await page.getByRole('button', { name: 'Vue colorée', exact: true }).click();
-      await page.getByText('Page 1 / 1', { exact: true }).waitFor();
+      await page.locator('.continuous-status').waitFor();
     },
   );
   await step(

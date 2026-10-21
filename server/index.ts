@@ -12,7 +12,7 @@ import {
   validateBackup,
   validateState,
 } from './validation.ts';
-import { analyze, engineHealth } from './primer3.ts';
+import { analyze, analyzePair, engineHealth } from './primer3.ts';
 import { askAssistant, DEFAULT_AI_MODEL } from './assistant.ts';
 
 export interface ServerOptions {
@@ -204,6 +204,8 @@ export function createGeneForgeServer(options: ServerOptions = {}): {
         json(response, 200, store.restore(validateBackup(await readJson(request))));
       } else if (path === '/api/analyze' && request.method === 'POST') {
         json(response, 200, await analyze(await readJson(request)));
+      } else if (path === '/api/analyze-pair' && request.method === 'POST') {
+        json(response, 200, await analyzePair(await readJson(request)));
       } else if (path === '/api/assistant/status' && request.method === 'GET') {
         json(response, 200, {
           configured: Boolean(process.env.OPENAI_API_KEY),
@@ -236,6 +238,7 @@ export function createGeneForgeServer(options: ServerOptions = {}): {
           '/api/backup',
           '/api/restore',
           '/api/analyze',
+          '/api/analyze-pair',
           '/api/assistant',
           '/api/assistant/status',
         ].includes(path)

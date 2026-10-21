@@ -196,8 +196,9 @@ export function OligoAnalyzer({
               )}
               <p className="muted small-text">
                 La température dépend du modèle et des concentrations. Les bases ambiguës ne sont
-                pas acceptées par ce calcul Primer3. Les dimères, hairpins et modifications
-                chimiques ne sont pas évalués dans cette version.
+                pas acceptées par ce calcul Primer3. Le mode Paire d’oligos calcule aussi
+                l’hétérodimère entre deux amorces. Les hairpins, homodimères et modifications
+                chimiques ne sont pas évalués.
               </p>
             </div>
           </div>

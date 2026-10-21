@@ -22,6 +22,9 @@ import { Heading, Empty } from './Common.tsx';
 import { ReportView } from './ReportView.tsx';
 import type { Report } from './ReportView.tsx';
 import { sequenceStats } from '../core/sequence.ts';
+import { detectGelLanes } from '../core/laneDetection.ts';
+import type { LaneDetection } from '../core/laneDetection.ts';
+import { naturalNames } from '../core/ordering.ts';
 
 interface Props {
   state: WorkspaceState;
@@ -51,7 +54,7 @@ export function GelStudio(props: Props) {
         notes: '',
         elabUrl: ELAB_URL,
         crop: { x: 0, y: 0, width: image.width, height: image.height },
-        lanes: Array.from({ length: 8 }, () => ({
+        lanes: Array.from({ length: 1 }, () => ({
           id: uid(),
           label: '',
           description: '',
@@ -63,6 +66,17 @@ export function GelStudio(props: Props) {
         createdAt: time,
         updatedAt: time,
       };
+      const pixels = await gelPixels(gel);
+      const detected = detectGelLanes(pixels.data, pixels.width, pixels.height, gel.crop);
+      gel.polarity = detected.polarity;
+      if (detected.count)
+        gel.lanes = Array.from({ length: detected.count }, () => ({
+          id: uid(),
+          label: '',
+          description: '',
+          primers: [],
+        }));
+      gel.notes = detected.message;
       if (await commit((s) => ({ ...s, gels: [...s.gels, gel] }), 'Image originale conservée.'))
         onActive(gel.id);
     } catch (e) {
@@ -153,6 +167,7 @@ function GelEditor({
   const [pixels, setPixels] = useState<ImageData | null>(null),
     [gesture, setGesture] = useState<PixelRect | null>(null),
     [report, setReport] = useState<Report | null>(null);
+  const [detection, setDetection] = useState<LaneDetection | null>(null);
   const [tm, setTm] = useState<{
     name: string;
     sequence: string;
@@ -187,6 +202,35 @@ function GelEditor({
     setFuture([]);
     setDraft(next);
   }
+  function detectRegion(crop: PixelRect, manual = false) {
+    if (!pixels) {
+      if (!manual) update({ ...draft, crop, bands: [] });
+      return;
+    }
+    const result = detectGelLanes(pixels.data, pixels.width, pixels.height, crop, draft.polarity);
+    setDetection(result);
+    if (!result.count) {
+      if (!manual) update({ ...draft, crop, bands: [] });
+      return;
+    }
+    if (
+      manual &&
+      (draft.bands.length ||
+        draft.lanes.some((l) => l.label || l.description || l.primers.length)) &&
+      !confirm('La détection remplace les pistes, légendes et contours. Continuer ?')
+    )
+      return;
+    const lanes = Array.from({ length: result.count }, () => ({
+      id: uid(),
+      label: '',
+      description: '',
+      primers: [],
+    }));
+    update({ ...draft, crop, lanes, bands: [] });
+    setLaneCount(result.count);
+    setLaneId(lanes[0].id);
+    setBandId(null);
+  }
   function undo() {
     if (!history.length) return;
     setFuture((f) => [draft, ...f]);
@@ -194,6 +238,7 @@ function GelEditor({
     setHistory((h) => h.slice(0, -1));
     setBandId(null);
   }
+  useEffect(() => setLaneCount(draft.lanes.length), [draft.lanes.length]);
   function redo() {
     if (!future.length) return;
     setHistory((h) => [...h, draft]);
@@ -301,7 +346,9 @@ function GelEditor({
         !confirm('Changer la zone du gel supprime les contours de bandes. Continuer ?')
       )
         return;
-      update({ ...draft, crop: region, bands: [] });
+      if (draft.lanes.some((l) => l.label || l.description || l.primers.length))
+        update({ ...draft, crop: region, bands: [] });
+      else detectRegion(region);
       setBandId(null);
     } else {
       if (draft.bands.length >= 1000) {
@@ -523,6 +570,13 @@ function GelEditor({
                 </div>
               </div>
               <div className="form-grid gel-controls">
+                <button
+                  className="button primary"
+                  disabled={!pixels}
+                  onClick={() => detectRegion(draft.crop, true)}
+                >
+                  Détecter automatiquement les pistes
+                </button>
                 <label className="field">
                   Nombre de pistes
                   <input
@@ -595,6 +649,10 @@ function GelEditor({
                   </select>
                 </label>
               </div>
+              <p className={'notice ' + (detection?.count ? 'success' : '')}>
+                {detection?.message ||
+                  'Détection à l’import et au recadrage. Tu peux la relancer sur cette zone ou ajuster le nombre manuellement (1–48).'}
+              </p>
               <details>
                 <summary>Coordonnées du recadrage</summary>
                 <p className="muted small-text">
@@ -841,6 +899,7 @@ function GelEditor({
                         p.status === 'active' &&
                         !selectedLane.primers.some((s) => s.recordId === p.id),
                     )
+                    .sort(naturalNames)
                     .map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name}

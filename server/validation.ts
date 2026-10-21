@@ -263,14 +263,23 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
   )
     invalid('settings.basesPerLine');
   if (!v1) {
-    choice(settings.accent, 'settings.accent', ['mint', 'blue', 'violet', 'amber']);
+    choice(settings.accent, 'settings.accent', [
+      'mint',
+      'blue',
+      'violet',
+      'amber',
+      'coral',
+      'rose',
+      'forest',
+      'cyan',
+    ]);
     choice(settings.density, 'settings.density', ['comfortable', 'compact']);
     choice(settings.basePalette, 'settings.basePalette', ['classic', 'contrast', 'mono']);
     choice(settings.defaultSequenceView, 'settings.defaultSequenceView', ['edit', 'colored']);
     boolean(settings.groupBases, 'settings.groupBases');
     if (
       !Number.isInteger(settings.sequenceFontSize) ||
-      (settings.sequenceFontSize as number) < 12 ||
+      (settings.sequenceFontSize as number) < 8 ||
       (settings.sequenceFontSize as number) > 22
     )
       invalid('settings.sequenceFontSize');

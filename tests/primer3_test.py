@@ -96,6 +96,27 @@ class Primer3AdapterTests(unittest.TestCase):
                 self.assertIsInstance(json.loads(result.stdout)["error"], str)
                 self.assertEqual(result.stderr, "")
 
+    def test_pair_matches_real_engine_for_both_tm_and_heterodimer(self):
+        first, second = "ACGTTGCAAGTCGATCGT", "ACGATCGACTTGCAACGT"
+        conditions = {name: request()[name] for name in adapter.PARAMETER_LIMITS}
+        payload = {"operation": "pair", "sequence1": first, "sequence2": second, "temp_c": 37, **conditions}
+        result = adapter.analyze_pair(payload)
+        expected = primer3.calc_heterodimer(first, second, **conditions, temp_c=37, max_loop=30, output_structure=True)
+        self.assertEqual(result["first"], adapter.analyze(request(sequence=first)))
+        self.assertEqual(result["second"], adapter.analyze(request(sequence=second)))
+        self.assertAlmostEqual(result["deltaTm"], abs(result["first"]["tm"] - result["second"]["tm"]))
+        self.assertEqual(result["heterodimer"]["structureFound"], expected.structure_found)
+        self.assertAlmostEqual(result["heterodimer"]["dgCalMol"], expected.dg, places=9)
+        self.assertEqual(json.loads(self.run_adapter(json.dumps(payload)).stdout), result)
+
+    def test_pair_rejects_invalid_second_oligo_and_temperature(self):
+        payload = {"operation": "pair", "sequence1": "ACGTACGT", "sequence2": "TGCATGCA", "temp_c": 37,
+                   **{name: request()[name] for name in adapter.PARAMETER_LIMITS}}
+        for changes in ({"sequence2": "ACGN"}, {"temp_c": True}, {"temp_c": 101},
+                        {"sequence1": "A" * 60, "sequence2": "T" * 60}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                adapter.analyze_pair({**payload, **changes})
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

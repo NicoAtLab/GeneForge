@@ -8,7 +8,8 @@ import { Icon } from './components/Icon.tsx';
 import { Bases, Empty, Heading } from './components/Common.tsx';
 import { Modal } from './components/Modal.tsx';
 import { SequenceEditor } from './components/SequenceEditor.tsx';
-import { OligoAnalyzer } from './components/OligoAnalyzer.tsx';
+import { OligoWorkspace } from './components/OligoWorkspace.tsx';
+import { naturalNames } from './core/ordering.ts';
 import { SettingsPage } from './components/SettingsPage.tsx';
 import { ImportForm, PrimerForm, ProjectForm, SequenceForm } from './components/EntityForms.tsx';
 import { NotesPage } from './components/NotesPage.tsx';
@@ -274,9 +275,13 @@ export default function App() {
     try {
       download(
         exportPrimerCsv(
-          state.primers.filter((p) =>
-            selected.length ? selected.includes(p.id) : filteredPrimers.some((f) => f.id === p.id),
-          ),
+          state.primers
+            .filter((p) =>
+              selected.length
+                ? selected.includes(p.id)
+                : filteredPrimers.some((f) => f.id === p.id),
+            )
+            .sort(naturalNames),
         ),
         'amorces-geneforge.csv',
         'text/csv;charset=utf-8',
@@ -331,7 +336,7 @@ export default function App() {
         ? a.sequence.length - b.sequence.length
         : sort === 'gc'
           ? (sequenceStats(a.sequence).gc ?? -1) - (sequenceStats(b.sequence).gc ?? -1)
-          : a.name.localeCompare(b.name),
+          : naturalNames(a, b),
     );
   const profileName = state.settings.name || 'Espace personnel';
   const projectCards = (items: Project[]) =>
@@ -1185,8 +1190,9 @@ export default function App() {
             </>
           )}
           {page === 'oligo' && (
-            <OligoAnalyzer
+            <OligoWorkspace
               key={oligoKey}
+              primers={state.primers}
               initialSequence={oligoSequence}
               onSave={(sequence) => setDialog({ type: 'primer', sequence })}
             />
@@ -1270,7 +1276,7 @@ export default function App() {
           </span>
           <span>
             SQLite · Révision {state.revision}
-            <span className="status-separator">|</span>GeneForge 0.4.0
+            <span className="status-separator">|</span>GeneForge 0.5.0
           </span>
         </footer>
       </div>

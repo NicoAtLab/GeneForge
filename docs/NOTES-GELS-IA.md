@@ -1,4 +1,4 @@
-# Notes, Gels et Assistant — GeneForge 0.4.0
+# Notes, Gels et Assistant — GeneForge 0.5.0
 
 ## Notes et e-Lab
 
@@ -12,8 +12,8 @@ Notes accueille du texte libre, un projet facultatif, des références de fichie
 
 ## Studio de gels
 
-1. Importer une image PNG, JPEG ou WebP dans **Gels**. L'original est conservé avec son nom, ses dimensions et son empreinte SHA-256.
-2. Choisir **Sélectionner le gel**, puis tracer un rectangle. Renseigner le nombre de pistes et cliquer sur **Diviser en pistes égales**. Les pistes ont la même largeur dans l'image source, même lorsque cette largeur est fractionnaire.
+1. Importer une image PNG, JPEG ou WebP dans **Gels**. L'original est conservé avec son nom, ses dimensions et son empreinte SHA-256. Le logiciel propose le nombre de pistes et le fond à partir de l’image.
+2. Choisir **Sélectionner le gel**, puis tracer un rectangle pour relancer la détection sur cette zone. **Détecter automatiquement les pistes** permet aussi de la relancer sur un gel existant. Vérifier la proposition et la corriger au besoin avec **Nombre de pistes → Diviser en pistes égales**. Les pistes ont la même largeur dans l'image source, même lorsque cette largeur est fractionnaire. Une détection remplaçant des légendes existantes demande confirmation.
 3. Cliquer sur un numéro au-dessus du gel ou sur une légende latérale. Renseigner titre, description et amorces de la bibliothèque. Une copie des amorces reste disponible après modification ou suppression de leur fiche. Enregistrer le gel pour ouvrir la fiche d'origine.
 4. Choisir **Entourer une bande** et tracer une ellipse. La bande est limitée à sa piste ; son titre et sa couleur sont modifiables. Annuler/rétablir inclut les légendes, contours et réglages.
 5. Choisir le fond du gel pour les profils (bandes claires sur noir ou sombres sur blanc), puis le fond noir/blanc de la figure exportée. L'original reste inchangé.
@@ -21,7 +21,9 @@ Notes accueille du texte libre, un projet facultatif, des références de fichie
 
 Le calcul Tm depuis une amorce expose concentrations, moteur, version, modèle et correction saline. **Conserver ce calcul dans la légende** copie le résultat, la séquence utilisée et ses conditions dans la description. Les conditions ne sont pas déduites de l'image.
 
-Les contours sont manuels. Le profil représente la moyenne des pixels par ligne de piste. Les mesures d'une bande utilisent les centres de pixels dans son ellipse : effectif, signal moyen, somme et proportion au niveau maximal. Ce sont des unités arbitraires non calibrées, sans soustraction de fond, détection automatique, estimation de taille en pb, correction de migration ou concentration. Recadrage et contours sont des superpositions. Rediviser ou recadrer demande confirmation avant d'effacer les contours concernés.
+Les contours de bandes sont manuels. La détection de pistes est une proposition fondée sur les signaux visibles et leur espacement. Elle peut inclure une position interne sans signal lorsque l’espacement le permet ; des pistes vides en bordure, un fond irrégulier ou une image peu contrastée peuvent demander une correction manuelle. Si aucun nombre fiable n’est proposé, une seule zone reste disponible avant division manuelle.
+
+Le profil représente la moyenne des pixels par ligne de piste. Les mesures d'une bande utilisent les centres de pixels dans son ellipse : effectif, signal moyen, somme et proportion au niveau maximal. Ce sont des unités arbitraires non calibrées, sans soustraction de fond, détection automatique des bandes, estimation de taille en pb, correction de migration ou concentration. Recadrage et contours sont des superpositions. Rediviser ou recadrer demande confirmation avant d'effacer les contours concernés.
 
 Limites : 3 Mio par image, 6 000 pixels par côté et 12 millions de pixels ; 1–48 pistes, huit amorces par piste et 1 000 contours par gel. L'espace et ses images partagent la limite de requête/sauvegarde de 16 Mio. Les TIFF doivent être convertis avant import. Le studio est une implémentation GeneForge ; [GelAnalyzer](https://gelanalyzer.com/usage/) n'est pas embarqué.
 

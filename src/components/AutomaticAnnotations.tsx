@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AnnotationSource, SequenceAnnotation, WorkspaceState } from '../types.ts';
 import type { SearchResult } from '../core/search.ts';
+import { naturalNames } from '../core/ordering.ts';
 import { createAutomaticAnnotations, roleLabels } from '../core/automaticAnnotations.ts';
 import type { SourceChoice } from '../core/automaticAnnotations.ts';
 import { runSequenceSearch } from '../sequenceSearch.ts';
@@ -50,6 +51,7 @@ export function AutomaticAnnotations({
         })),
       ...state.primers
         .filter((p) => p.status === 'active')
+        .sort(naturalNames)
         .map((p) => ({
           key: `primer:${p.id}`,
           kind: 'primer' as const,
