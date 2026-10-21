@@ -1,0 +1,7 @@
+node_modules
+dist
+data
+.python-deps
+artifacts
+pnpm-lock.yaml
+scripts/*.ps1
