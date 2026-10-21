@@ -85,7 +85,7 @@ try {
       assert(await page.getByRole('button', { name: /^Enregistrer/ }).isDisabled());
       await page.getByRole('button', { name: 'Annuler', exact: true }).click();
       assert.equal(await box.inputValue(), 'ACGTTGCAAGTCGATCGT');
-      await page.getByLabel('Rechercher un motif exact').fill('CGT');
+      await page.getByLabel('Rechercher dans cette séquence').fill('CGT');
       await page.getByText(/2 occurrence/).waitFor();
       await page.getByRole('button', { name: 'Vue colorée', exact: true }).click();
       await page.getByText('Page 1 / 1', { exact: true }).waitFor();

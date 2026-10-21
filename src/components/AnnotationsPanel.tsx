@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { SequenceAnnotation } from '../types.ts';
+import type { AnnotationSource, SequenceAnnotation, WorkspaceState } from '../types.ts';
+import { roleLabels } from '../core/automaticAnnotations.ts';
+import { AnnotationSourceView } from './AnnotationSourceView.tsx';
 import { highlightColors } from '../preferences.ts';
 import { uid } from '../lib.ts';
 import { Modal } from './Modal.tsx';
@@ -10,15 +12,27 @@ export function AnnotationsPanel({
   selection,
   onChange,
   onSelect,
+  sources,
+  state,
+  target,
+  canNavigate,
+  onOpenSource,
 }: {
   annotations: SequenceAnnotation[];
   length: number;
   selection: { start: number; end: number };
   onChange: (annotations: SequenceAnnotation[]) => void;
   onSelect: (start: number, end: number) => void;
+  sources: AnnotationSource[];
+  state: WorkspaceState;
+  target: string;
+  canNavigate: boolean;
+  onOpenSource: (kind: AnnotationSource['kind'], id: string) => void;
 }) {
   const [editing, setEditing] = useState<SequenceAnnotation | null>(null);
   const [filter, setFilter] = useState('');
+  const [sourceAnnotation, setSourceAnnotation] = useState<SequenceAnnotation | null>(null);
+  const openedSource = sources.find((s) => s.id === sourceAnnotation?.sourceId);
   const selected = selection.end > selection.start;
   const valid =
     editing &&
@@ -52,6 +66,9 @@ export function AnnotationsPanel({
               color: highlightColors[0].value,
               notes: '',
               needsReview: false,
+              role: 'region',
+              strand: null,
+              sourceId: null,
             })
           }
         >
@@ -75,7 +92,9 @@ export function AnnotationsPanel({
         {!annotations.length && <p className="muted">Aucune région annotée pour le moment.</p>}
         {annotations
           .filter((a) =>
-            `${a.name} ${a.notes}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()),
+            `${a.name} ${a.notes} ${roleLabels[a.role]} ${sources.find((s) => s.id === a.sourceId)?.fileName ?? ''}`
+              .toLocaleLowerCase()
+              .includes(filter.toLocaleLowerCase()),
           )
           .map((a) => (
             <article className="annotation-card" key={a.id} style={{ borderLeftColor: a.color }}>
@@ -93,7 +112,16 @@ export function AnnotationsPanel({
                   {a.start === null ? 'Région supprimée' : `${a.start}–${a.end}`}
                 </span>
                 {a.needsReview && <span className="review-badge">À vérifier</span>}
+                <span className="tag">
+                  {roleLabels[a.role]}
+                  {a.strand ? ` · ${a.strand === 'both' ? '±' : a.strand}` : ''}
+                </span>
               </div>
+              {a.sourceId && (
+                <button className="source-link" onClick={() => setSourceAnnotation(a)}>
+                  Source : {sources.find((s) => s.id === a.sourceId)?.name ?? 'Source conservée'}
+                </button>
+              )}
               {a.notes && <p className="annotation-notes">{a.notes}</p>}
               {a.needsReview && (
                 <p className="muted small-text">
@@ -117,6 +145,17 @@ export function AnnotationsPanel({
             </article>
           ))}
       </div>
+      {openedSource && sourceAnnotation && (
+        <AnnotationSourceView
+          source={openedSource}
+          annotation={sourceAnnotation}
+          target={target}
+          state={state}
+          canNavigate={canNavigate}
+          onOpen={onOpenSource}
+          onClose={() => setSourceAnnotation(null)}
+        />
+      )}
       {editing && (
         <Modal
           title={
@@ -150,6 +189,22 @@ export function AnnotationsPanel({
                   value={editing.name}
                   onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                 />
+              </label>
+              <label className="field">
+                Catégorie de l’annotation
+                <select
+                  className="select"
+                  value={editing.role}
+                  onChange={(e) =>
+                    setEditing({ ...editing, role: e.target.value as SequenceAnnotation['role'] })
+                  }
+                >
+                  {Object.entries(roleLabels).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <div className="form-grid">
                 <label className="field">

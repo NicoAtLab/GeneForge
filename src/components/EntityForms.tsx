@@ -71,6 +71,8 @@ export function ProjectForm({
             ...p,
             projectIds: p.projectIds.filter((id) => id !== project.id),
           })),
+          notes: s.notes.map((n) => (n.projectId === project.id ? { ...n, projectId: null } : n)),
+          gels: s.gels.map((g) => (g.projectId === project.id ? { ...g, projectId: null } : g)),
         }),
         'Projet supprimé.',
       )
@@ -159,6 +161,8 @@ export function SequenceForm({
               name: name.trim(),
               sequence: normalized,
               annotations: [],
+              annotationSources: [],
+              sourceFile: null,
               topology: 'linear',
               notes: '',
               createdAt: timestamp,
@@ -261,6 +265,7 @@ export function PrimerForm({
       name: name.trim(),
       sequence: normalized,
       notes,
+      sourceFile: primer?.sourceFile ?? null,
       tags: [
         ...new Set(
           tags
@@ -455,6 +460,8 @@ export function ImportForm({
                   notes: r.notes ?? '',
                   topology: 'linear' as const,
                   annotations: [],
+                  annotationSources: [],
+                  sourceFile: fileName || null,
                   createdAt: timestamp,
                   updatedAt: timestamp,
                 })),
@@ -470,6 +477,7 @@ export function ImportForm({
                   sequence: r.sequence,
                   notes: r.notes ?? '',
                   tags: r.tags ?? [],
+                  sourceFile: fileName || null,
                   projectIds: project ? [project] : [],
                   orientation: 'other' as const,
                   favorite: false,

@@ -8,7 +8,8 @@ Ce MVP travaille sur de l'ADN écrit de 5′ vers 3′. Les calculs de compositi
 - La normalisation supprime uniquement les espaces et convertit les lettres ASCII en majuscules. Les positions sont comptées à partir de 1 dans cette séquence normalisée.
 - Limite applicative : 1 000 000 de caractères normalisés par séquence. Une séquence vide est admise dans les fonctions de base pendant l'édition ; elle est refusée à l'import/export d'un enregistrement.
 - Le complément conserve l'ordre et s'affiche donc 3′→5′ ; le complément inverse s'affiche 5′→3′. Les couples ambigus sont `R↔Y`, `K↔M`, `B↔V`, `D↔H` ; `S`, `W` et `N` sont invariants.
-- La recherche de motifs est une recherche littérale sur le brin affiché, insensible à la casse, avec chevauchements. `N` ne correspond qu'à la lettre `N` ; les ambiguïtés ne sont pas développées et le brin inverse n'est pas recherché automatiquement. Le motif vide ne renvoie aucun résultat.
+- La recherche de motifs est littérale, insensible à la casse, avec chevauchements. `N` ne correspond qu'à la lettre `N` ; les ambiguïtés ne sont pas développées. L'option complément inverse ajoute l'autre sens ; elle est activée par défaut pour l'annotation automatique. Un fragment identique à son complément inverse est compté une seule fois par position, avec un sens `±`. Un motif vide invite à saisir une séquence.
+- L'algorithme KMP parcourt la cible en temps linéaire par motif et par sens, dans un worker local. Les occurrences sont toutes comptées, mais seules 5 000 sont conservées pour l'affichage d'une recherche. L'annotation automatique impose un aperçu complet, limité à 200 sources et 2 000 correspondances par analyse. Aucune recherche ne traverse l'origine circulaire.
 
 ## Composition
 
@@ -20,9 +21,17 @@ Les mêmes calculs s'appliquent à la sélection. Les pourcentages individuels A
 
 ## Annotations personnelles
 
-Les intervalles sont à bornes incluses, de 1 à la longueur de la séquence normalisée. Les blancs ne comptent pas comme bases. Une annotation enregistre un nom, une couleur et des notes ; elle ne déclare aucune fonction biologique automatiquement.
+Les intervalles sont à bornes incluses, de 1 à la longueur de la séquence normalisée. Les blancs ne comptent pas comme bases. Une annotation enregistre un nom, une couleur, des notes et une catégorie ; elle ne déclare aucune fonction biologique automatiquement.
 
-Les insertions au début d'une région décalent cette région ; les insertions après sa dernière base ne l'étendent pas. Une édition interne ajuste ses bornes et active un indicateur de vérification. Une région entièrement supprimée conserve ses informations avec des coordonnées nulles. Le complément inverse transforme `[début, fin]` en `[L − fin + 1, L − début + 1]`. Il n'existe pas encore de notion de brin d'annotation ni de région traversant l'origine circulaire.
+Les insertions au début d'une région décalent cette région ; les insertions après sa dernière base ne l'étendent pas. Une édition interne ajuste ses bornes et active un indicateur de vérification. Une région entièrement supprimée conserve ses informations avec des coordonnées nulles. Le complément inverse transforme `[début, fin]` en `[L − fin + 1, L − début + 1]` et échange les sens `+` et `−` ; `±` reste inchangé. Une annotation manuelle n'a pas de sens déterminé. Une région ne peut pas traverser l'origine circulaire.
+
+L'annotation automatique reconnaît exactement le fragment source entier ou son complément inverse, sans mismatch, alignement partiel ni tolérance aux gaps. Les catégories Up, Down, Amorce et Fragment sont choisies par l'utilisateur ; elles ne déterminent pas le sens trouvé. Chaque occurrence ajoutée conserve une référence vers une copie de la source (séquence, nom, notes, nom du fichier d'import connu et date de capture). Cette copie est partagée entre les annotations d'une même version de source dans un document. Elle reste disponible après modification ou suppression de la fiche d'origine. Le fichier original n'est pas conservé ; l'export de la copie reconstruit un FASTA. La sauvegarde native conserve toutes ces relations.
+
+## Images de gels
+
+Les profils et mesures utilisent les pixels RGB décodés par le navigateur, sans retoucher l'original. Le signal est `0,2126 R + 0,7152 G + 0,0722 B` pour un fond noir, ou `255 − signal` pour un fond blanc. Les canaux restent dans leur espace d'affichage encodé ; aucune linéarisation ou transformation en densité optique n'est appliquée. Les pixels transparents sont composés sur le fond choisi.
+
+Un profil est la moyenne des colonnes de la piste pour chaque ligne. La mesure d'une ellipse inclut les pixels dont le centre se trouve dans son contour ; elle donne effectif, moyenne, somme et proportion de signaux au moins égaux à 254,5 sur 255. Ce dernier indicateur porte sur les pixels décodés, pas sur la saturation physique du capteur. Il n'y a ni soustraction de fond, ni calibration en taille ou concentration, ni correction de migration. L'IA ne fournit pas de mesure calibrée à partir de l'image.
 
 ## Tm indicative de Wallace
 
@@ -54,4 +63,4 @@ L'adaptateur reçoit un unique objet JSON sur l'entrée standard et renvoie un u
 
 ## Vérification
 
-`node --test tests/core.test.ts` couvre la composition ambiguë, les couples IUPAC, les orientations, les coordonnées, les bornes Wallace, la corruption des fichiers et les formules CSV. `python tests/primer3_test.py` vérifie le moteur réel, la référence numérique publiée par Primer3-py, la transmission des paramètres, les bornes et le protocole JSON. Ce deuxième groupe nécessite Primer3-py 2.3.1 dans l'environnement Python ou dans `.python-deps` à la racine du projet. Les jeux de données de base sont artificiels ; la valeur de référence Primer3 provient de son [exemple officiel](https://libnano.github.io/primer3-py/quickstart.html).
+`pnpm test` couvre la composition ambiguë, les couples IUPAC, les orientations, les coordonnées, les bornes Wallace, la corruption des fichiers et les formules CSV. Les tests de recherche comparent aussi KMP à une référence naïve sur des cas aléatoires déterministes et vérifient une cible répétitive de 1 000 000 de bases. Les tests d'annotations et de migration contrôlent les sens, doublons, copies de source et sauvegardes. `python tests/primer3_test.py` vérifie le moteur réel, la référence numérique publiée par Primer3-py, la transmission des paramètres, les bornes et le protocole JSON. Ce deuxième groupe nécessite Primer3-py 2.3.1 dans l'environnement Python ou dans `.python-deps` à la racine du projet. Les jeux de données de base sont artificiels ; la valeur de référence Primer3 provient de son [exemple officiel](https://libnano.github.io/primer3-py/quickstart.html).

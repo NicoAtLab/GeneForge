@@ -12,6 +12,9 @@ const a: SequenceAnnotation = {
   color: '#f4ca64',
   notes: 'Information à conserver',
   needsReview: false,
+  role: 'region',
+  strand: null,
+  sourceId: null,
 };
 test('insertion before and at region boundaries shifts without changing the annotated bases', () => {
   assert.deepEqual(remapAnnotations([a], 'ACGTACGT', 'TTACGTACGT')[0], { ...a, start: 5, end: 8 });

@@ -52,12 +52,17 @@ function envelope<T>(state: T) {
 test('v1 backups validate their original checksum before migrating all data', () => {
   const original = legacy();
   const migrated = validateBackup(envelope(original));
-  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.schemaVersion, 4);
   assert.equal(migrated.revision, 7);
   assert.equal(migrated.settings.theme, 'light');
   assert.equal(migrated.settings.basesPerLine, 40);
   assert.equal(migrated.settings.sequenceFontSize, 14);
-  assert.deepEqual(migrated.sequences[0], { ...original.sequences[0], annotations: [] });
+  assert.deepEqual(migrated.sequences[0], {
+    ...original.sequences[0],
+    annotations: [],
+    annotationSources: [],
+    sourceFile: null,
+  });
   const corrupted = envelope(original);
   corrupted.state.settings.name = 'Changed';
   assert.throws(() => validateBackup(corrupted), /modifiée ou endommagée/);
@@ -76,7 +81,7 @@ test('SQLite v1 migration is persistent, keeps revision and writes an untouched 
     db.prepare('INSERT INTO workspace VALUES(1,7,?,?)').run(JSON.stringify(legacy()), stamp);
     db.close();
     store = new WorkspaceStore(dir);
-    assert.equal(store.read().schemaVersion, 2);
+    assert.equal(store.read().schemaVersion, 4);
     assert.equal(store.read().revision, 7);
     const files = readdirSync(join(dir, 'backups'));
     assert.equal(files.length, 1);
@@ -103,6 +108,9 @@ test('annotations and preferences round-trip; out-of-bounds or unreviewed orphan
       color: '#79bdfa',
       notes: 'Mémo',
       needsReview: false,
+      role: 'region',
+      strand: null,
+      sourceId: null,
     },
   ];
   state.settings.accent = 'violet';
@@ -117,5 +125,91 @@ test('annotations and preferences round-trip; out-of-bounds or unreviewed orphan
   state.settings.sequenceFontSize = 999;
   assert.throws(() => validateState(state), /sequenceFontSize/);
   const fresh = emptyState();
-  assert.equal(fresh.schemaVersion, 2);
+  assert.equal(fresh.schemaVersion, 4);
+});
+
+test('SQLite v2 keeps existing highlights and preferences when adding provenance fields', () => {
+  const state = JSON.parse(JSON.stringify(validateBackup(envelope(legacy()))));
+  state.schemaVersion = 2;
+  state.settings.accent = 'violet';
+  delete state.notes;
+  delete state.gels;
+  delete state.sequences[0].sourceFile;
+  delete state.sequences[0].annotationSources;
+  state.sequences[0].annotations = [
+    {
+      id: 'old',
+      name: 'Surlignage ancien',
+      start: 2,
+      end: 4,
+      color: '#79bdfa',
+      notes: 'Ne pas perdre',
+      needsReview: false,
+    },
+  ];
+  const dir = mkdtempSync(join(tmpdir(), 'geneforge-migration-v2-'));
+  let store: WorkspaceStore | undefined;
+  try {
+    const db = new DatabaseSync(join(dir, 'geneforge.sqlite'));
+    db.exec(
+      'CREATE TABLE workspace (id INTEGER PRIMARY KEY, revision INTEGER, state_json TEXT, updated_at TEXT); PRAGMA user_version=2;',
+    );
+    db.prepare('INSERT INTO workspace VALUES(1,7,?,?)').run(JSON.stringify(state), stamp);
+    db.close();
+    store = new WorkspaceStore(dir);
+    const migrated = store.read();
+    assert.equal(migrated.settings.accent, 'violet');
+    assert.deepEqual(migrated.sequences[0].annotations[0], {
+      ...state.sequences[0].annotations[0],
+      role: 'region',
+      strand: null,
+      sourceId: null,
+    });
+    assert.deepEqual(migrated.sequences[0].annotationSources, []);
+    const backupFile = readdirSync(join(dir, 'backups'))[0];
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(dir, 'backups', backupFile), 'utf8')).state,
+      state,
+    );
+  } finally {
+    store?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('source snapshots survive missing original records and backup/restore; dangling snapshot links fail', () => {
+  const state = validateBackup(envelope(legacy()));
+  const seq = state.sequences[0];
+  seq.annotationSources = [
+    {
+      id: 'snapshot',
+      kind: 'sequence',
+      recordId: 'deleted-source',
+      name: 'Source conservée',
+      fileName: 'source.fasta',
+      sequence: 'ACG',
+      notes: 'Note source',
+      capturedAt: stamp,
+    },
+  ];
+  seq.annotations = [
+    {
+      id: 'auto',
+      name: 'Up · Source conservée',
+      start: 1,
+      end: 3,
+      color: '#79bdfa',
+      notes: '',
+      needsReview: false,
+      role: 'up',
+      strand: '+',
+      sourceId: 'snapshot',
+    },
+  ];
+  assert.deepEqual(validateBackup(makeBackup(state)), state);
+  seq.annotations[0].sourceId = 'missing';
+  assert.throws(() => validateState(state), /source absente/);
+  seq.annotations[0].sourceId = 'snapshot';
+  seq.annotationSources[0].sequence = 'ACGU';
+  assert.throws(() => validateState(state), /annotationSource.sequence/);
 });

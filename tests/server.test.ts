@@ -49,6 +49,8 @@ function sampleState(revision = 0): WorkspaceState {
         sequence: 'ACGTNRY',
         topology: 'linear',
         annotations: [],
+        annotationSources: [],
+        sourceFile: null,
         notes: 'Test',
         createdAt: date,
         updatedAt: date,
@@ -60,6 +62,7 @@ function sampleState(revision = 0): WorkspaceState {
         name: 'Oligo exemple',
         sequence: 'ACGTACGT',
         orientation: 'forward',
+        sourceFile: null,
         notes: '',
         tags: ['test'],
         projectIds: ['project-one'],
@@ -95,7 +98,7 @@ test('initial workspace is empty and health exposes counts, not private content'
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   const health = await (await fetch(`${baseUrl}/api/health`)).json();
-  assert.deepEqual(health.counts, { projects: 0, sequences: 0, primers: 0 });
+  assert.deepEqual(health.counts, { projects: 0, sequences: 0, primers: 0, notes: 0, gels: 0 });
   assert.equal(typeof health.primer3.available, 'boolean');
   assert.equal(health.sequences, undefined);
 });

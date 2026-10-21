@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SequenceRecord, WorkspaceState } from '../types.ts';
+import type { AnnotationSource, SequenceRecord, WorkspaceState } from '../types.ts';
 import { remapAnnotations, reverseAnnotations } from '../core/annotations.ts';
 import type { EditRange } from '../core/annotations.ts';
 import {
   complement,
-  findMotifs,
   normalizeSequence,
   reverseComplement,
   sequenceStats,
@@ -16,8 +15,11 @@ import type { Commit } from '../lib.ts';
 import { Icon } from './Icon.tsx';
 import { Composition, Heading } from './Common.tsx';
 import { AnnotationsPanel } from './AnnotationsPanel.tsx';
+import { AutomaticAnnotations } from './AutomaticAnnotations.tsx';
+import { SequenceSearch } from './SequenceSearch.tsx';
+import type { SequenceMatch } from '../core/search.ts';
 
-type Snapshot = Pick<SequenceRecord, 'sequence' | 'annotations'>;
+type Snapshot = Pick<SequenceRecord, 'sequence' | 'annotations' | 'annotationSources'>;
 
 export function SequenceEditor({
   record,
@@ -27,6 +29,7 @@ export function SequenceEditor({
   setDirty,
   notify,
   onBack,
+  onOpenSource,
 }: {
   record: SequenceRecord;
   state: WorkspaceState;
@@ -35,18 +38,19 @@ export function SequenceEditor({
   setDirty: (dirty: boolean) => void;
   notify: (message: string) => void;
   onBack: () => void;
+  onOpenSource: (kind: AnnotationSource['kind'], id: string) => void;
 }) {
   const [draft, setDraft] = useState(record),
     [history, setHistory] = useState<Snapshot[]>([]),
     [future, setFuture] = useState<Snapshot[]>([]);
-  const [motif, setMotif] = useState(''),
-    [selection, setSelection] = useState({ start: 0, end: 0 }),
+  const [searchMatches, setSearchMatches] = useState<SequenceMatch[]>([]);
+  const [selection, setSelection] = useState({ start: 0, end: 0 }),
     [page, setPage] = useState(0),
     [view, setView] = useState<'edit' | 'colored'>(state.settings.defaultSequenceView);
   const [rangeStart, setRangeStart] = useState('1'),
     [rangeEnd, setRangeEnd] = useState('1');
   const inputRef = useRef<HTMLTextAreaElement>(null),
-    searchRef = useRef<HTMLInputElement>(null);
+    searchRef = useRef<HTMLTextAreaElement>(null);
   const editHint = useRef<EditRange | undefined>(undefined);
   const dragAnchor = useRef<number | null>(null),
     keyboardAnchor = useRef(0),
@@ -65,7 +69,11 @@ export function SequenceEditor({
   function changeSnapshot(next: Snapshot) {
     setHistory((h) => [
       ...h.slice(-29),
-      { sequence: draft.sequence, annotations: draft.annotations },
+      {
+        sequence: draft.sequence,
+        annotations: draft.annotations,
+        annotationSources: draft.annotationSources,
+      },
     ]);
     setFuture([]);
     setDraft((d) => ({ ...d, ...next }));
@@ -75,20 +83,35 @@ export function SequenceEditor({
     changeSnapshot({
       sequence: value,
       annotations: remapAnnotations(draft.annotations, normalized, next, editHint.current),
+      annotationSources: draft.annotationSources,
     });
     editHint.current = undefined;
     setSelection({ start: 0, end: 0 });
   }
   function undo() {
     if (!history.length) return;
-    setFuture((f) => [{ sequence: draft.sequence, annotations: draft.annotations }, ...f]);
+    setFuture((f) => [
+      {
+        sequence: draft.sequence,
+        annotations: draft.annotations,
+        annotationSources: draft.annotationSources,
+      },
+      ...f,
+    ]);
     setDraft((d) => ({ ...d, ...history[history.length - 1] }));
     setHistory((h) => h.slice(0, -1));
     setSelection({ start: 0, end: 0 });
   }
   function redo() {
     if (!future.length) return;
-    setHistory((h) => [...h, { sequence: draft.sequence, annotations: draft.annotations }]);
+    setHistory((h) => [
+      ...h,
+      {
+        sequence: draft.sequence,
+        annotations: draft.annotations,
+        annotationSources: draft.annotationSources,
+      },
+    ]);
     setDraft((d) => ({ ...d, ...future[0] }));
     setFuture((f) => f.slice(1));
     setSelection({ start: 0, end: 0 });
@@ -150,18 +173,21 @@ export function SequenceEditor({
     input.addEventListener('beforeinput', capture);
     return () => input.removeEventListener('beforeinput', capture);
   }, [view]);
-  const hits = useMemo(() => {
-    try {
-      return motif.trim() ? findMotifs(normalized, motif) : [];
-    } catch {
-      return [];
-    }
-  }, [normalized, motif]);
   const bpl = state.settings.basesPerLine;
   const pageSize = bpl * 12,
     totalPages = Math.max(1, Math.ceil(normalized.length / pageSize));
   const visiblePage = Math.min(page, totalPages - 1),
     part = normalized.slice(visiblePage * pageSize, (visiblePage + 1) * pageSize);
+  const searchMask = useMemo(() => {
+    const mask = new Uint8Array(pageSize);
+    const offset = visiblePage * pageSize;
+    for (const match of searchMatches) {
+      const start = Math.max(0, match.start - 1 - offset),
+        end = Math.min(pageSize, match.end - offset);
+      if (start < end) mask.fill(1, start, end);
+    }
+    return mask;
+  }, [searchMatches, visiblePage, pageSize]);
   const rows = Array.from({ length: Math.ceil(part.length / bpl) }, (_, i) => ({
     position: visiblePage * pageSize + i * bpl + 1,
     text: part.slice(i * bpl, (i + 1) * bpl),
@@ -304,6 +330,12 @@ export function SequenceEditor({
                   </select>
                 </label>
               </div>
+              <SequenceSearch
+                target={normalized}
+                inputRef={searchRef}
+                onHighlights={setSearchMatches}
+                onSelect={chooseRange}
+              />
               <div className="sequence-label">
                 <span>
                   BRIN SENS <span className="muted">5′ → 3′</span>
@@ -435,7 +467,7 @@ export function SequenceEditor({
                                 <span
                                   key={index}
                                   data-base-index={index}
-                                  className={`nucleotide base-${'ATGC'.includes(base) ? base.toLowerCase() : 'n'} ${annotations.length ? 'annotated-base' : ''} ${index >= selection.start && index < selection.end ? 'selected-base' : ''} ${state.settings.groupBases && i > 0 && i % 10 === 0 ? 'base-spacer' : ''}`}
+                                  className={`nucleotide base-${'ATGC'.includes(base) ? base.toLowerCase() : 'n'} ${annotations.length ? 'annotated-base' : ''} ${searchMask[index - visiblePage * pageSize] ? 'search-hit' : ''} ${index >= selection.start && index < selection.end ? 'selected-base' : ''} ${state.settings.groupBases && i > 0 && i % 10 === 0 ? 'base-spacer' : ''}`}
                                   style={background ? { background } : undefined}
                                   title={[
                                     `${index + 1} · ${base}`,
@@ -532,6 +564,7 @@ export function SequenceEditor({
                     changeSnapshot({
                       sequence: reverseComplement(normalized),
                       annotations: reverseAnnotations(draft.annotations, normalized.length),
+                      annotationSources: draft.annotationSources,
                     });
                     setSelection({ start: 0, end: 0 });
                   }}
@@ -539,41 +572,6 @@ export function SequenceEditor({
                   Complément inverse
                 </button>
               </div>
-              <label className="field">
-                Rechercher un motif exact
-                <input
-                  className="input mono"
-                  ref={searchRef}
-                  placeholder="Ex. ACGT"
-                  value={motif}
-                  onChange={(e) => setMotif(e.target.value.toUpperCase())}
-                />
-              </label>
-              {motif && (
-                <p className="muted">
-                  {hits.length} occurrence(s)
-                  {hits.length > 0 && (
-                    <>
-                      {' '}
-                      · positions :{' '}
-                      {hits.slice(0, 20).map((pos, i) => (
-                        <button
-                          key={pos}
-                          className="position-link"
-                          onClick={() => {
-                            chooseRange(pos - 1, pos - 1 + normalizeSequence(motif).length);
-                          }}
-                        >
-                          {pos}
-                          {i < Math.min(19, hits.length - 1) ? ', ' : ''}
-                        </button>
-                      ))}
-                      {hits.length > 20 ? '…' : ''}
-                    </>
-                  )}{' '}
-                  · Recherche littérale, sans traversée de l’origine.
-                </p>
-              )}
               <label className="field">
                 Notes
                 <textarea
@@ -588,12 +586,40 @@ export function SequenceEditor({
             </div>
           </div>
           {validation.valid && (
+            <AutomaticAnnotations
+              state={state}
+              targetId={draft.id}
+              target={normalized}
+              annotations={draft.annotations}
+              sources={draft.annotationSources}
+              onSelect={chooseRange}
+              notify={notify}
+              onApply={(annotations, annotationSources) => {
+                changeSnapshot({ sequence: draft.sequence, annotations, annotationSources });
+                setView('colored');
+              }}
+            />
+          )}
+          {validation.valid && (
             <AnnotationsPanel
               annotations={draft.annotations}
               length={normalized.length}
               selection={selection}
               onSelect={chooseRange}
-              onChange={(annotations) => changeSnapshot({ sequence: draft.sequence, annotations })}
+              onChange={(annotations) =>
+                changeSnapshot({
+                  sequence: draft.sequence,
+                  annotations,
+                  annotationSources: draft.annotationSources.filter((s) =>
+                    annotations.some((a) => a.sourceId === s.id),
+                  ),
+                })
+              }
+              sources={draft.annotationSources}
+              state={state}
+              target={normalized}
+              canNavigate={!dirty}
+              onOpenSource={onOpenSource}
             />
           )}
         </div>

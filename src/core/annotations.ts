@@ -63,6 +63,7 @@ export function reverseAnnotations(annotations: SequenceAnnotation[], length: nu
           ...a,
           start: length - a.end + 1,
           end: length - a.start + 1,
+          strand: a.strand === '+' ? ('-' as const) : a.strand === '-' ? ('+' as const) : a.strand,
         },
   );
 }

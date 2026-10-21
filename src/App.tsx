@@ -11,6 +11,9 @@ import { SequenceEditor } from './components/SequenceEditor.tsx';
 import { OligoAnalyzer } from './components/OligoAnalyzer.tsx';
 import { SettingsPage } from './components/SettingsPage.tsx';
 import { ImportForm, PrimerForm, ProjectForm, SequenceForm } from './components/EntityForms.tsx';
+import { NotesPage } from './components/NotesPage.tsx';
+import { GelStudio } from './components/GelStudio.tsx';
+import { AssistantPage } from './components/AssistantPage.tsx';
 
 const nav: { page: Page; label: string; icon: string }[] = [
   { page: 'dashboard', label: 'Vue d’ensemble', icon: 'dashboard' },
@@ -18,6 +21,9 @@ const nav: { page: Page; label: string; icon: string }[] = [
   { page: 'sequences', label: 'Séquences', icon: 'dna' },
   { page: 'primers', label: 'Bibliothèque d’amorces', icon: 'library' },
   { page: 'oligo', label: 'Analyseur d’oligos', icon: 'flask' },
+  { page: 'notes', label: 'Notes', icon: 'file' },
+  { page: 'gels', label: 'Gels', icon: 'gel' },
+  { page: 'assistant', label: 'Assistant IA', icon: 'spark' },
 ];
 type Dialog =
   | { type: 'project'; project?: Project }
@@ -43,6 +49,8 @@ export default function App() {
     [primerFilter, setPrimerFilter] = useState('active'),
     [sort, setSort] = useState('name'),
     [selected, setSelected] = useState<string[]>([]);
+  const [activeGel, setActiveGel] = useState<string | null>(null),
+    [activeNote, setActiveNote] = useState<string | null>(null);
   const stateRef = useRef(state),
     saving = useRef(false),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,6 +133,8 @@ export default function App() {
     if (!canLeave()) return;
     setDirty(false);
     setActiveSequence(null);
+    setActiveGel(null);
+    setActiveNote(null);
     setPage(next);
     setFilter('');
     setSelected([]);
@@ -207,6 +217,8 @@ export default function App() {
             name: 'Séquence de démonstration',
             sequence: dna,
             annotations: [],
+            annotationSources: [],
+            sourceFile: null,
             topology: 'linear',
             notes:
               'Données artificielles pour découvrir l’éditeur. Aucune fonction biologique attribuée.',
@@ -222,6 +234,7 @@ export default function App() {
             sequence: 'ACGTTGCAAGTCGATCGT',
             orientation: 'other',
             notes: 'Oligo artificiel pour tester l’analyseur.',
+            sourceFile: null,
             tags: ['démonstration'],
             projectIds: [projectId],
             favorite: true,
@@ -788,6 +801,13 @@ export default function App() {
                 setDirty={setDirty}
                 notify={notify}
                 onBack={() => go('sequences')}
+                onOpenSource={(kind, id) => {
+                  if (kind === 'sequence') openSequence(id);
+                  else {
+                    const primer = state.primers.find((p) => p.id === id);
+                    if (primer) setDialog({ type: 'primer', primer });
+                  }
+                }}
               />
             ) : (
               <>
@@ -1181,6 +1201,63 @@ export default function App() {
               notify={notify}
             />
           )}
+          {page === 'notes' && (
+            <NotesPage
+              key={activeNote ?? 'notes'}
+              initialId={activeNote}
+              state={state}
+              commit={commit}
+              busy={busy}
+              setDirty={setDirty}
+              notify={notify}
+              onOpenGel={(id) => {
+                if (!canLeave()) return;
+                setDirty(false);
+                setActiveGel(id);
+                setPage('gels');
+              }}
+            />
+          )}
+          {page === 'gels' && (
+            <GelStudio
+              state={state}
+              commit={commit}
+              busy={busy}
+              setDirty={setDirty}
+              notify={notify}
+              activeId={activeGel}
+              onActive={(id, force) => {
+                if (!force && !canLeave()) return;
+                setDirty(false);
+                setActiveGel(id);
+              }}
+              onPrimer={(id) => {
+                const primer = state.primers.find((p) => p.id === id);
+                if (primer) setDialog({ type: 'primer', primer });
+              }}
+            />
+          )}
+          {page === 'assistant' && (
+            <AssistantPage
+              state={state}
+              commit={commit}
+              notify={notify}
+              onSource={(kind, id) => {
+                if (kind === 'sequence') openSequence(id);
+                else if (kind === 'project') openProject(id);
+                else if (kind === 'primer') {
+                  const primer = state.primers.find((p) => p.id === id);
+                  if (primer) setDialog({ type: 'primer', primer });
+                } else if (kind === 'gel') {
+                  setActiveGel(id);
+                  setPage('gels');
+                } else if (kind === 'note') {
+                  setActiveNote(id);
+                  setPage('notes');
+                }
+              }}
+            />
+          )}
         </main>
         <footer className="statusbar">
           <span>
@@ -1193,7 +1270,7 @@ export default function App() {
           </span>
           <span>
             SQLite · Révision {state.revision}
-            <span className="status-separator">|</span>GeneForge 0.2.0
+            <span className="status-separator">|</span>GeneForge 0.4.0
           </span>
         </footer>
       </div>

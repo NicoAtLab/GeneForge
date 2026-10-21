@@ -280,7 +280,7 @@ export function SettingsPage({
           <div className="panel">
             <div className="panel-heading">
               <h3>
-                GeneForge <span className="tag">0.2.0</span>
+                GeneForge <span className="tag">0.4.0</span>
               </h3>
             </div>
             <div className="panel-body">

@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { WorkspaceState } from '../src/types.ts';
 import { displayDefaults } from '../src/preferences.ts';
+import { validateLab } from './labValidation.ts';
 
 export const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 const DNA = /^[ACGTRYSWKMBDHVN]*$/;
@@ -67,6 +68,10 @@ function baseFields(record: Record<string, unknown>, field: string, ids: Set<str
 }
 
 export function validateState(value: unknown, allowLegacy = false): WorkspaceState {
+  const version =
+    value && typeof value === 'object'
+      ? (value as { schemaVersion?: unknown }).schemaVersion
+      : undefined;
   const state = object(value, 'state', [
     'schemaVersion',
     'revision',
@@ -74,9 +79,12 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
     'sequences',
     'primers',
     'settings',
+    ...(version === 4 ? ['notes', 'gels'] : []),
   ]);
-  const legacy = allowLegacy && state.schemaVersion === 1;
-  if (state.schemaVersion !== 2 && !legacy) invalid('schemaVersion');
+  const legacy = allowLegacy && (state.schemaVersion === 1 || state.schemaVersion === 2);
+  const v1 = state.schemaVersion === 1;
+  const beforeLab = allowLegacy && state.schemaVersion === 3;
+  if (state.schemaVersion !== 4 && !legacy && !beforeLab) invalid('schemaVersion');
   if (
     !Number.isSafeInteger(state.revision) ||
     (state.revision as number) < 0 ||
@@ -114,7 +122,8 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
       'notes',
       'createdAt',
       'updatedAt',
-      ...(!legacy ? ['annotations'] : []),
+      ...(!v1 ? ['annotations'] : []),
+      ...(!legacy ? ['annotationSources', 'sourceFile'] : []),
     ]);
     baseFields(sequence, 'sequence', sequenceIds);
     id(sequence.projectId, 'sequence.projectId');
@@ -123,7 +132,40 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
     if (!DNA.test(sequence.sequence)) invalid('sequence.sequence (alphabet ADN IUPAC)');
     choice(sequence.topology, 'sequence.topology', ['linear', 'circular']);
     string(sequence.notes, 'sequence.notes', 100_000);
+    const sourceIds = new Set<string>();
     if (!legacy) {
+      if (sequence.sourceFile !== null) string(sequence.sourceFile, 'sequence.sourceFile', 255, 1);
+      array(sequence.annotationSources, 'sequence.annotationSources', 2_000);
+      for (const item of sequence.annotationSources) {
+        const source = object(item, 'annotationSource', [
+          'id',
+          'kind',
+          'recordId',
+          'name',
+          'fileName',
+          'sequence',
+          'notes',
+          'capturedAt',
+        ]);
+        id(source.id, 'annotationSource.id');
+        if (sourceIds.has(source.id)) invalid('annotationSource.id (doublon)');
+        sourceIds.add(source.id);
+        id(source.recordId, 'annotationSource.recordId');
+        choice(source.kind, 'annotationSource.kind', ['sequence', 'primer']);
+        string(source.name, 'annotationSource.name', 200, 1);
+        if (source.fileName !== null) string(source.fileName, 'annotationSource.fileName', 255, 1);
+        string(
+          source.sequence,
+          'annotationSource.sequence',
+          source.kind === 'primer' ? 2_000 : 1_000_000,
+          1,
+        );
+        if (!DNA.test(source.sequence)) invalid('annotationSource.sequence');
+        string(source.notes, 'annotationSource.notes', 100_000);
+        date(source.capturedAt, 'annotationSource.capturedAt');
+      }
+    }
+    if (!v1) {
       array(sequence.annotations, 'sequence.annotations', 2_000);
       const ids = new Set<string>();
       for (const item of sequence.annotations) {
@@ -135,6 +177,7 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
           'color',
           'notes',
           'needsReview',
+          ...(!legacy ? ['role', 'strand', 'sourceId'] : []),
         ]);
         id(a.id, 'annotation.id');
         if (ids.has(a.id)) invalid('annotation.id (doublon)');
@@ -145,6 +188,15 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
         string(a.color, 'annotation.color', 7, 7);
         if (!/^#[0-9a-fA-F]{6}$/.test(a.color)) invalid('annotation.color');
         boolean(a.needsReview, 'annotation.needsReview');
+        if (!legacy) {
+          choice(a.role, 'annotation.role', ['region', 'up', 'down', 'primer', 'fragment']);
+          if (a.strand !== null) choice(a.strand, 'annotation.strand', ['+', '-', 'both']);
+          if (a.sourceId !== null) {
+            id(a.sourceId, 'annotation.sourceId');
+            if (!sourceIds.has(a.sourceId)) invalid('annotation.sourceId (source absente)');
+            if (a.strand === null) invalid('annotation.strand');
+          }
+        }
         if (a.start === null && a.end === null) {
           if (!a.needsReview) invalid('annotation.needsReview');
         } else if (
@@ -172,8 +224,11 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
       'status',
       'createdAt',
       'updatedAt',
+      ...(!legacy ? ['sourceFile'] : []),
     ]);
     baseFields(primer, 'primer', primerIds);
+    if (!legacy && primer.sourceFile !== null)
+      string(primer.sourceFile, 'primer.sourceFile', 255, 1);
     string(primer.sequence, 'primer.sequence', 2_000, 1);
     if (!DNA.test(primer.sequence)) invalid('primer.sequence (alphabet ADN IUPAC)');
     choice(primer.orientation, 'primer.orientation', ['forward', 'reverse', 'other']);
@@ -196,7 +251,7 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
     'organization',
     'theme',
     'basesPerLine',
-    ...(!legacy ? Object.keys(displayDefaults) : []),
+    ...(!v1 ? Object.keys(displayDefaults) : []),
   ]);
   string(settings.name, 'settings.name', 200);
   string(settings.organization, 'settings.organization', 200);
@@ -207,7 +262,7 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
     (settings.basesPerLine as number) > 120
   )
     invalid('settings.basesPerLine');
-  if (!legacy) {
+  if (!v1) {
     choice(settings.accent, 'settings.accent', ['mint', 'blue', 'violet', 'amber']);
     choice(settings.density, 'settings.density', ['comfortable', 'compact']);
     choice(settings.basePalette, 'settings.basePalette', ['classic', 'contrast', 'mono']);
@@ -223,10 +278,25 @@ export function validateState(value: unknown, allowLegacy = false): WorkspaceSta
   // JSON round trip also detaches callers from the persisted state.
   const result = JSON.parse(JSON.stringify(state));
   if (legacy) {
-    result.schemaVersion = 2;
-    result.settings = { ...result.settings, ...displayDefaults };
-    result.sequences = result.sequences.map((s: object) => ({ ...s, annotations: [] }));
+    if (v1) result.settings = { ...result.settings, ...displayDefaults };
+    result.sequences = result.sequences.map((s: { annotations?: object[] }) => ({
+      ...s,
+      sourceFile: null,
+      annotationSources: [],
+      annotations: (s.annotations ?? []).map((a) => ({
+        ...a,
+        role: 'region',
+        strand: null,
+        sourceId: null,
+      })),
+    }));
+    result.primers = result.primers.map((p: object) => ({ ...p, sourceFile: null }));
   }
+  if (legacy || beforeLab) {
+    result.schemaVersion = 4;
+    result.notes = [];
+    result.gels = [];
+  } else validateLab(state, projectIds, invalid);
   return result as WorkspaceState;
 }
 

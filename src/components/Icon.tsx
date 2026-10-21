@@ -3,6 +3,18 @@ import type { CSSProperties } from 'react';
 type IconProps = { name: string; size?: number; className?: string; style?: CSSProperties };
 
 const paths: Record<string, React.ReactNode> = {
+  gel: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M7 7h2m3 2h2m3-2h1M7 12h2m3 3h2m3-3h1M7 17h2" />
+    </>
+  ),
+  spark: (
+    <>
+      <path d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8Z" />
+      <path d="M20 2v4m-2-2h4" />
+    </>
+  ),
   dashboard: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />

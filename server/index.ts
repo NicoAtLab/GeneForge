@@ -3,6 +3,7 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadEnvFile } from 'node:process';
 import { WorkspaceStore } from './storage.ts';
 import {
   ApiError,
@@ -12,6 +13,7 @@ import {
   validateState,
 } from './validation.ts';
 import { analyze, engineHealth } from './primer3.ts';
+import { askAssistant, DEFAULT_AI_MODEL } from './assistant.ts';
 
 export interface ServerOptions {
   dataDir?: string;
@@ -165,6 +167,8 @@ export function createGeneForgeServer(options: ServerOptions = {}): {
         .filter(Boolean) ??
       [],
   };
+  let assistantBusy = false;
+  let assistantCalls: number[] = [];
   const server = createServer(async (request, response) => {
     securityHeaders(response);
     try {
@@ -175,12 +179,14 @@ export function createGeneForgeServer(options: ServerOptions = {}): {
         const state = store.read();
         json(response, 200, {
           status: 'ok',
-          schemaVersion: 2,
+          schemaVersion: 4,
           revision: state.revision,
           counts: {
             projects: state.projects.length,
             sequences: state.sequences.length,
             primers: state.primers.length,
+            notes: state.notes.length,
+            gels: state.gels.length,
           },
           primer3: await engineHealth(),
         });
@@ -198,8 +204,41 @@ export function createGeneForgeServer(options: ServerOptions = {}): {
         json(response, 200, store.restore(validateBackup(await readJson(request))));
       } else if (path === '/api/analyze' && request.method === 'POST') {
         json(response, 200, await analyze(await readJson(request)));
+      } else if (path === '/api/assistant/status' && request.method === 'GET') {
+        json(response, 200, {
+          configured: Boolean(process.env.OPENAI_API_KEY),
+          model: process.env.GENEFORGE_AI_MODEL ?? DEFAULT_AI_MODEL,
+        });
+      } else if (path === '/api/assistant' && request.method === 'POST') {
+        const input = await readJson(request);
+        assistantCalls = assistantCalls.filter((t) => Date.now() - t < 60_000);
+        if (assistantBusy || assistantCalls.length >= 10)
+          throw new ApiError(429, 'AI_BUSY', 'L’assistant est occupé. Réessaie dans un instant.');
+        const controller = new AbortController();
+        response.on('close', () => {
+          if (!response.writableEnded) controller.abort();
+        });
+        assistantBusy = true;
+        assistantCalls.push(Date.now());
+        try {
+          json(
+            response,
+            200,
+            await askAssistant(input, store.read(), { signal: controller.signal }),
+          );
+        } finally {
+          assistantBusy = false;
+        }
       } else if (
-        ['/api/health', '/api/state', '/api/backup', '/api/restore', '/api/analyze'].includes(path)
+        [
+          '/api/health',
+          '/api/state',
+          '/api/backup',
+          '/api/restore',
+          '/api/analyze',
+          '/api/assistant',
+          '/api/assistant/status',
+        ].includes(path)
       ) {
         throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Méthode non autorisée.');
       } else if (path === '/api' || path.startsWith('/api/')) {
@@ -247,6 +286,7 @@ export function createGeneForgeServer(options: ServerOptions = {}): {
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : '';
 if (invokedPath === fileURLToPath(import.meta.url)) {
+  if (existsSync(resolve('.env.local'))) loadEnvFile(resolve('.env.local'));
   const port = Number(process.env.PORT ?? 4173);
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error('PORT doit être un entier compris entre 1 et 65535.');
